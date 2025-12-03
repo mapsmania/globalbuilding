@@ -2,62 +2,95 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>3D Buildings (debug)</title>
+<title>3D Buildings (reprojected)</title>
 <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
 <link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
+
+<!-- proj4 for coordinate reprojection -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+
 <style>
-  body { margin: 0; padding: 0; }
+  body { margin: 0; }
   #map { position: absolute; top: 0; bottom: 0; width: 100%; }
 </style>
 </head>
 <body>
 <div id="map"></div>
+
 <script>
+// EPSG:3857 → EPSG:4326 definition
+const proj3857 = proj4('EPSG:3857');
+const proj4326 = proj4('EPSG:4326');
+
+// Reproject a single coordinate
+function reprojCoord(coord) {
+  const ll = proj4(proj3857, proj4326, coord);
+  return [ll[0], ll[1]];
+}
+
+// Reproject entire geometry recursively
+function reprojGeometry(geom) {
+  if (geom.type === "Polygon") {
+    return {
+      type: "Polygon",
+      coordinates: geom.coordinates.map(ring =>
+        ring.map(c => reprojCoord(c))
+      )
+    };
+  }
+  if (geom.type === "MultiPolygon") {
+    return {
+      type: "MultiPolygon",
+      coordinates: geom.coordinates.map(poly =>
+        poly.map(ring => ring.map(c => reprojCoord(c)))
+      )
+    };
+  }
+  return geom;
+}
+
 const map = new maplibregl.Map({
   container: "map",
-  style: {
-    version: 8,
-    sources: {
-      'osm': {
-        type: 'raster',
-        tiles: ["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        tileSize: 256,
-        attribution: "© OpenStreetMap contributors"
-      }
-    },
-    layers: [
-      { id: 'osm', type: 'raster', source: 'osm' }
-    ]
-  },
-  center: [-0.092, 51.515],  // City of London
-  zoom: 16,
+  style: "https://demotiles.maplibre.org/style.json",
+  center: [-0.092, 51.515],
+  zoom: 15,
   pitch: 60,
   bearing: -20
 });
 
 map.on("load", () => {
   fetch("https://mapsmania.github.io/globalbuilding/building.geojson")
-    .then(resp => resp.json())
+    .then(r => r.json())
     .then(data => {
-      console.log("Loaded GeoJSON, features:", data.features.length);
 
-      map.addSource("buildings", { type: "geojson", data: data });
+      console.log("Loaded raw features:", data.features.length);
+
+      // Reproject all features to WGS84
+      data.features = data.features.map(f => ({
+        ...f,
+        geometry: reprojGeometry(f.geometry)
+      }));
+
+      // Add corrected GeoJSON to map
+      map.addSource("buildings", {
+        type: "geojson",
+        data: data
+      });
 
       map.addLayer({
         id: "buildings-3d",
         type: "fill-extrusion",
         source: "buildings",
         paint: {
-          "fill-extrusion-color": "#888888",
-          "fill-extrusion-height": ["coalesce", ["get", "height"], 20],
+          "fill-extrusion-color": "#999",
+          "fill-extrusion-height": ["get", "height"],
           "fill-extrusion-base": 0,
-          "fill-extrusion-opacity": 0.7
+          "fill-extrusion-opacity": 0.9
         }
       });
-    })
-    .catch(err => console.error("Failed to load GeoJSON:", err));
-  map.addControl(new maplibregl.NavigationControl());
+
+    });
 });
 </script>
 </body>
