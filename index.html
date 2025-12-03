@@ -38,26 +38,12 @@ function reprojectGeometry(geom) {
 
 // Initialize map
 const map = new maplibregl.Map({
-  container: 'map',
-  style: {
-    version: 8,
-    sources: {
-      osm: {
-        type: "raster",
-        tiles: ["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        tileSize: 256
-      }
-    },
-    layers: [
-      { id: 'osm', type: 'raster', source: 'osm' }
-    ]
-  },
-  center: [-0.092, 51.515],
-  zoom: 16,
-  pitch: 60,
-  bearing: -20
-});
-
+    style: 'https://tiles.openfreemap.org/styles/positron',
+    center: [13.388, 52.517],
+    zoom: 9.5,
+    container: 'map',
+  })
+  
 map.on('load', () => {
   fetch("https://mapsmania.github.io/globalbuilding/building.geojson")
     .then(r => r.json())
