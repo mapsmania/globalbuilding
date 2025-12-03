@@ -10,61 +10,73 @@
 <style>
   body { margin:0; padding:0; }
   #map { position:absolute; top:0; bottom:0; width:100%; }
+  #downloadBtn {
+    position:absolute;
+    top:10px;
+    left:10px;
+    z-index:9999;
+    background:white;
+    padding:8px 12px;
+    border-radius:6px;
+    box-shadow:0 0 6px rgba(0,0,0,0.3);
+    cursor:pointer;
+    font-family:sans-serif;
+  }
+  #searchBox {
+    position:absolute;
+    top:10px;
+    right:10px;
+    z-index:9999;
+    width:250px;
+    padding:5px 8px;
+    border-radius:6px;
+    border:1px solid #ccc;
+    font-family:sans-serif;
+  }
 </style>
 </head>
 <body>
+
+<button id="downloadBtn">Download GeoJSON</button>
+<input type="text" id="searchBox" placeholder="Search location... (Press Enter)" />
 <div id="map"></div>
 
 <script>
-// Define projections
+// ------------------------
+// Projections
+// ------------------------
 const proj4326 = proj4("EPSG:4326");
 const proj3857 = proj4("EPSG:3857");
 
-// Reproject single coordinate
-function reproj(c) {
-    return proj4(proj3857, proj4326, c);
-}
+let lastGeoJSON = { type: "FeatureCollection", features: [] };
 
-// Reproject Polygon or MultiPolygon
+// Reproject coordinates
+function reproj(c) { return proj4(proj3857, proj4326, c); }
+
 function reprojectGeometry(geom) {
-    if (geom.type === "Polygon") {
-        return {
-            type: "Polygon",
-            coordinates: geom.coordinates.map(ring => ring.map(reproj))
-        };
-    }
-    if (geom.type === "MultiPolygon") {
-        return {
-            type: "MultiPolygon",
-            coordinates: geom.coordinates.map(poly =>
-                poly.map(ring => ring.map(reproj))
-            )
-        };
-    }
+    if (geom.type === "Polygon") return { type:"Polygon", coordinates:geom.coordinates.map(ring=>ring.map(reproj)) };
+    if (geom.type === "MultiPolygon") return { type:"MultiPolygon", coordinates:geom.coordinates.map(poly=>poly.map(ring=>ring.map(reproj))) };
     return geom;
 }
 
-
-    const map = new maplibregl.Map({
+// ------------------------
+// Initialize Map
+// ------------------------
+const map = new maplibregl.Map({
     style: 'https://tiles.openfreemap.org/styles/positron',
-    center: [-0.092, 51.515],   // City of London
-    zoom: 17,
-    maxZoom: 20,              // users CAN zoom in
-    minZoom: 17,     
+    center: [-0.092, 51.515],   
+    zoom: 15,
     pitch: 60,
-    bearing: -20,
     container: 'map',
-  })
+});
 
 map.addControl(new maplibregl.NavigationControl());
 
-// Add an empty GeoJSON source for buildings
+// ------------------------
+// Add GeoJSON Source & 3D Layer
+// ------------------------
 map.on("load", () => {
-  map.addSource("buildings", {
-    type: "geojson",
-    data: { type: "FeatureCollection", features: [] }
-  });
-
+  map.addSource("buildings", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
   map.addLayer({
     id: "buildings-3d",
     type: "fill-extrusion",
@@ -76,55 +88,76 @@ map.on("load", () => {
     }
   });
 
-  updateBuildings(); // load initial area
+  updateBuildings();
 });
 
-// ======================
-// 1-MILE BOUNDING BOX
-// ======================
+// ------------------------
+// 1-Mile Bounding Box & WFS fetch
+// ------------------------
 async function updateBuildings() {
-  const center = map.getCenter(); // lon/lat
-  const centerLonLat = [center.lng, center.lat];
+    const center = map.getCenter();
+    const center3857 = proj4(proj4326, proj3857, [center.lng, center.lat]);
+    const halfMile = 800;
 
-  // Convert center to EPSG:3857 meters
-  const center3857 = proj4(proj4326, proj3857, centerLonLat);
+    const minX = center3857[0]-halfMile, maxX=center3857[0]+halfMile;
+    const minY = center3857[1]-halfMile, maxY=center3857[1]+halfMile;
+    const bbox = `${minX},${minY},${maxX},${maxY},EPSG:3857`;
 
-  const halfMile = 1600 / 2;  // 800 meters radius
+    const url =
+      "https://tubvsig-so2sat-vm1.srv.mwn.de/geoserver/ows?" +
+      "service=WFS&version=2.0.0&request=GetFeature&" +
+      "typeNames=global3D:lod1_global&" +
+      "outputFormat=application/json&" +
+      `bbox=${bbox}&srsName=EPSG:3857`;
 
-  // Create bounding box in meters
-  const minX = center3857[0] - halfMile;
-  const maxX = center3857[0] + halfMile;
-  const minY = center3857[1] - halfMile;
-  const maxY = center3857[1] + halfMile;
+    const response = await fetch(url);
+    const json = await response.json();
+    json.features = json.features.map(f=>({...f, geometry:reprojectGeometry(f.geometry)}));
 
-  const bbox = `${minX},${minY},${maxX},${maxY},EPSG:3857`;
-
-  // WFS request
-  const url =
-  "https://tubvsig-so2sat-vm1.srv.mwn.de/geoserver/ows?" +
-  "service=WFS&version=2.0.0&request=GetFeature&" +
-  "typeNames=global3D:lod1_global&" +
-  "outputFormat=application/json&" +         // <-- REQUIRED
-  `bbox=${bbox}&srsName=EPSG:3857`;
-
-
-  console.log("Fetching 1-mile area:", bbox);
-
-  const response = await fetch(url);
-  const json = await response.json();
-
-  // Reproject features to EPSG:4326 for MapLibre
-  json.features = json.features.map(f => ({
-    ...f,
-    geometry: reprojectGeometry(f.geometry)
-  }));
-
-  map.getSource("buildings").setData(json);
+    lastGeoJSON = json;
+    map.getSource("buildings").setData(json);
 }
 
-// Re-load data whenever user stops moving
 map.on("moveend", updateBuildings);
 
+// ------------------------
+// Download Button
+// ------------------------
+document.getElementById("downloadBtn").onclick = () => {
+    const blob = new Blob([JSON.stringify(lastGeoJSON,null,2)], { type:"application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    const center = map.getCenter();
+    a.download = `globalbuilding_${center.lng.toFixed(5)}_${center.lat.toFixed(5)}.geojson`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+};
+
+// ------------------------
+// Nominatim Search
+// ------------------------
+document.getElementById("searchBox").addEventListener("keydown", async function(e){
+    if(e.key === "Enter"){
+        const query = this.value;
+        if(!query) return;
+
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
+        try {
+            const response = await fetch(url, {headers: {'Accept-Language':'en'}});
+            const data = await response.json();
+            if(data.length){
+                const lon = parseFloat(data[0].lon);
+                const lat = parseFloat(data[0].lat);
+                map.flyTo({ center:[lon, lat], zoom:17 });
+            } else {
+                alert("Location not found.");
+            }
+        } catch(err){
+            console.error("Search error:", err);
+            alert("Search failed.");
+        }
+    }
+});
 </script>
 </body>
 </html>
