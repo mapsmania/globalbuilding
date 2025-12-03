@@ -2,43 +2,164 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>GlobalBuildingAtlas Viewer</title>
+<title>Building Downloader</title>
 <link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
 
 <style>
-  body { margin:0; padding:0; }
+  body { margin:0; padding:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
   #map { position:absolute; top:0; bottom:0; width:100%; }
+
+  /* Floating Toolbar */
+  #toolbar {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    z-index: 9999;
+    display: flex;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 10px 12px;
+    border-radius: 12px;
+    box-shadow: 0 6px 12px rgba(0,0,0,0.25);
+    align-items: center;
+  }
+
+  /* Download Button */
   #downloadBtn {
-    position:absolute;
-    top:10px;
-    left:10px;
-    z-index:9999;
-    background:white;
-    padding:8px 12px;
-    border-radius:6px;
-    box-shadow:0 0 6px rgba(0,0,0,0.3);
-    cursor:pointer;
-    font-family:sans-serif;
+    background: #4CAF50;
+    color: white;
+    padding: 8px 14px;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: all 0.2s ease-in-out;
   }
+
+  #downloadBtn:hover {
+    background: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+  }
+
+  #downloadBtn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+
+  /* Search Box */
   #searchBox {
-    position:absolute;
-    top:10px;
-    right:10px;
-    z-index:9999;
-    width:250px;
-    padding:5px 8px;
-    border-radius:6px;
-    border:1px solid #ccc;
-    font-family:sans-serif;
+    width: 220px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.2s ease-in-out;
   }
+
+  #searchBox:focus {
+    border-color: #4CAF50;
+    box-shadow: 0 2px 6px rgba(76,175,80,0.3);
+  }
+
+  #searchBox::placeholder {
+    color: #888;
+    font-style: italic;
+  }
+
+/* Splash screen overlay */
+
+#splash {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.85);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  padding: 40px;
+  z-index: 10000;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  transition: opacity 0.5s ease;
+}
+
+#splash h1 {
+  font-size: 28px;
+  margin-bottom: 20px;
+}
+
+#splash p {
+  font-size: 16px;
+  line-height: 1.5;
+  max-width: 700px;
+}
+
+#splash .citation {
+  margin-top: 20px;
+  font-size: 14px;
+  font-style: italic;
+  color: #ccc;
+}
+
+#startBtn {
+  margin-top: 30px;
+  padding: 10px 20px;
+  font-size: 16px;
+  font-weight: 600;
+  color: white;
+  background: #4CAF50;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+}
+
+#startBtn:hover {
+  background: #45a049;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+}
+
+#splash.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
 </style>
 </head>
 <body>
+<!-- Splash Screen -->
+<div id="splash">
+  <h1>Welcome to the Global Building Atlas</h1>
+  <p>The Global Building Atlas is a global, high-resolution 3D dataset of the world's 2.75 billion buildings. 
+     It was developed by the Technical University of Munich (TUM).</p>
+    <p><strong>How to Use this Downloader:</strong></p>
+<ul style="text-align: left; max-width: 700px; margin: 10px auto;">
+  <li>Search for a location and press Enter to fly to it.</li>  
+  <li>Use the "Download GeoJSON" button to save the building data for all the buildings in one square mile around the current map center.</li>
+  </ul>
+  <div class="citation">
+<strong>Zhu et al., 2025:</strong> GlobalBuildingAtlas: An Open Global and Complete Dataset of Building Polygons, Heights and LoD1 3D Models. 
+Available at <a href="https://arxiv.org/abs/2506.04106" target="_blank" style="color:#4CAF50;">https://arxiv.org/abs/2506.04106</a>.
+</div>
 
-<button id="downloadBtn">Download GeoJSON</button>
-<input type="text" id="searchBox" placeholder="Search location... (Press Enter)" />
+
+  <button id="startBtn">Start</button>
+</div>
+
+<div id="toolbar">
+  <input type="text" id="searchBox" placeholder="Search location... (Press Enter)" />  
+  <button id="downloadBtn">Download GeoJSON</button> 
+</div>
 <div id="map"></div>
 
 <script>
@@ -94,6 +215,14 @@ map.on("load", () => {
   });
 
   updateBuildings();
+});
+
+// ------------------------
+// Start Button Listener (moved outside map.on("load"))
+// ------------------------
+document.getElementById("startBtn").addEventListener("click", () => {
+  const splash = document.getElementById("splash");
+  splash.classList.add("hidden");
 });
 
 // ------------------------
