@@ -2,82 +2,62 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>3D City of London</title>
+<title>3D Buildings (debug)</title>
 <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
-
-<!-- MapLibre GL JS -->
-<link
-  href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css"
-  rel="stylesheet"
-/>
+<link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
-
 <style>
   body { margin: 0; padding: 0; }
   #map { position: absolute; top: 0; bottom: 0; width: 100%; }
 </style>
 </head>
-
 <body>
 <div id="map"></div>
-
 <script>
-// ---------------------------
-// 1. Create the map
-// ---------------------------
 const map = new maplibregl.Map({
-    container: "map",
-    style: {
-        version: 8,
-        sources: {
-            'osm': {
-                type: 'raster',
-                tiles: [
-                    "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                ],
-                tileSize: 256,
-                attribution: "© OpenStreetMap contributors"
-            }
-        },
-        layers: [{
-            id: 'osm',
-            type: 'raster',
-            source: 'osm'
-        }]
+  container: "map",
+  style: {
+    version: 8,
+    sources: {
+      'osm': {
+        type: 'raster',
+        tiles: ["https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256,
+        attribution: "© OpenStreetMap contributors"
+      }
     },
-    center: [-0.092, 51.515],  // City of London
-    zoom: 15,
-    pitch: 60,
-    bearing: -20
+    layers: [
+      { id: 'osm', type: 'raster', source: 'osm' }
+    ]
+  },
+  center: [-0.092, 51.515],  // City of London
+  zoom: 16,
+  pitch: 60,
+  bearing: -20
 });
 
-// ---------------------------
-// 2. Add 3D building layer
-// ---------------------------
 map.on("load", () => {
-    map.addSource("buildings", {
-        type: "geojson",
-        data: "https://mapsmania.github.io/globalbuilding/building.geojson"
-    });
+  fetch("https://mapsmania.github.io/globalbuilding/building.geojson")
+    .then(resp => resp.json())
+    .then(data => {
+      console.log("Loaded GeoJSON, features:", data.features.length);
 
-    map.addLayer({
+      map.addSource("buildings", { type: "geojson", data: data });
+
+      map.addLayer({
         id: "buildings-3d",
         type: "fill-extrusion",
         source: "buildings",
         paint: {
-            "fill-extrusion-color": "#aaaaaa",
-            "fill-extrusion-height": [
-                "coalesce",
-                ["get", "height"],
-                10     // fallback height if missing
-            ],
-            "fill-extrusion-base": 0,
-            "fill-extrusion-opacity": 0.9
+          "fill-extrusion-color": "#888888",
+          "fill-extrusion-height": ["coalesce", ["get", "height"], 20],
+          "fill-extrusion-base": 0,
+          "fill-extrusion-opacity": 0.7
         }
-    });
-
-    // Add navigation controls
-    map.addControl(new maplibregl.NavigationControl());
+      });
+    })
+    .catch(err => console.error("Failed to load GeoJSON:", err));
+  map.addControl(new maplibregl.NavigationControl());
 });
 </script>
 </body>
