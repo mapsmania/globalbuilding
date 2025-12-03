@@ -39,8 +39,10 @@ function reprojectGeometry(geom) {
 // Initialize map
 const map = new maplibregl.Map({
     style: 'https://tiles.openfreemap.org/styles/positron',
-    center: [13.388, 52.517],
-    zoom: 9.5,
+    center: [-0.092, 51.515],
+    zoom: 16,
+    pitch: 60,
+    bearing: -20,
     container: 'map',
   })
   
