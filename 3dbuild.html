@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>GlobalBuildingAtlas Viewer</title>
+<link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+
+<style>
+  body { margin:0; padding:0; }
+  #map { position:absolute; top:0; bottom:0; width:100%; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<script>
+// Define projections
+const proj4326 = proj4("EPSG:4326");
+const proj3857 = proj4("EPSG:3857");
+
+// Reproject single coordinate
+function reproj(c) {
+    return proj4(proj3857, proj4326, c);
+}
+
+// Reproject Polygon or MultiPolygon
+function reprojectGeometry(geom) {
+    if (geom.type === "Polygon") {
+        return {
+            type: "Polygon",
+            coordinates: geom.coordinates.map(ring => ring.map(reproj))
+        };
+    }
+    if (geom.type === "MultiPolygon") {
+        return {
+            type: "MultiPolygon",
+            coordinates: geom.coordinates.map(poly =>
+                poly.map(ring => ring.map(reproj))
+            )
+        };
+    }
+    return geom;
+}
+
+// CREATE MAP
+const map = new maplibregl.Map({
+  container: "map",
+  style: {
+    version: 8,
+    sources: {
+      osm: {
+        type: "raster",
+        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+        tileSize: 256
+      }
+    },
+    layers: [
+      { id: "osm", type: "raster", source: "osm" }
+    ]
+  },
+  center: [-0.092, 51.515],   // City of London
+  zoom: 16,
+  pitch: 60,
+  bearing: -20
+});
+
+map.addControl(new maplibregl.NavigationControl());
+
+// Add an empty GeoJSON source for buildings
+map.on("load", () => {
+  map.addSource("buildings", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] }
+  });
+
+  map.addLayer({
+    id: "buildings-3d",
+    type: "fill-extrusion",
+    source: "buildings",
+    paint: {
+      "fill-extrusion-color": "#888",
+      "fill-extrusion-height": ["coalesce", ["get", "height"], 10],
+      "fill-extrusion-opacity": 0.9
+    }
+  });
+
+  updateBuildings(); // load initial area
+});
+
+// ======================
+// 1-MILE BOUNDING BOX
+// ======================
+async function updateBuildings() {
+  const center = map.getCenter(); // lon/lat
+  const centerLonLat = [center.lng, center.lat];
+
+  // Convert center to EPSG:3857 meters
+  const center3857 = proj4(proj4326, proj3857, centerLonLat);
+
+  const halfMile = 1600 / 2;  // 800 meters radius
+
+  // Create bounding box in meters
+  const minX = center3857[0] - halfMile;
+  const maxX = center3857[0] + halfMile;
+  const minY = center3857[1] - halfMile;
+  const maxY = center3857[1] + halfMile;
+
+  const bbox = `${minX},${minY},${maxX},${maxY},EPSG:3857`;
+
+  // WFS request
+  const url =
+  "https://tubvsig-so2sat-vm1.srv.mwn.de/geoserver/ows?" +
+  "service=WFS&version=2.0.0&request=GetFeature&" +
+  "typeNames=global3D:lod1_global&" +
+  "outputFormat=application/json&" +         // <-- REQUIRED
+  `bbox=${bbox}&srsName=EPSG:3857`;
+
+
+  console.log("Fetching 1-mile area:", bbox);
+
+  const response = await fetch(url);
+  const json = await response.json();
+
+  // Reproject features to EPSG:4326 for MapLibre
+  json.features = json.features.map(f => ({
+    ...f,
+    geometry: reprojectGeometry(f.geometry)
+  }));
+
+  map.getSource("buildings").setData(json);
+}
+
+// Re-load data whenever user stops moving
+map.on("moveend", updateBuildings);
+
+</script>
+</body>
+</html>
