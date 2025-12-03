@@ -44,27 +44,17 @@ function reprojectGeometry(geom) {
     return geom;
 }
 
-// CREATE MAP
-const map = new maplibregl.Map({
-  container: "map",
-  style: {
-    version: 8,
-    sources: {
-      osm: {
-        type: "raster",
-        tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-        tileSize: 256
-      }
-    },
-    layers: [
-      { id: "osm", type: "raster", source: "osm" }
-    ]
-  },
-  center: [-0.092, 51.515],   // City of London
-  zoom: 16,
-  pitch: 60,
-  bearing: -20
-});
+
+    const map = new maplibregl.Map({
+    style: 'https://tiles.openfreemap.org/styles/positron',
+    center: [-0.092, 51.515],   // City of London
+    zoom: 17,
+    maxZoom: 20,              // users CAN zoom in
+    minZoom: 17,     
+    pitch: 60,
+    bearing: -20,
+    container: 'map',
+  })
 
 map.addControl(new maplibregl.NavigationControl());
 
