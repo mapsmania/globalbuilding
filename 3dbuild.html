@@ -71,66 +71,108 @@
     font-style: italic;
   }
 
-/* Splash screen overlay */
 
+/* Splash screen overlay */
 #splash {
   position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0,0,0,0.85);
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(30, 30, 30, 0.9)); /* Dark gradient background */
   color: white;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   text-align: center;
-  padding: 40px;
   z-index: 10000;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  transition: opacity 0.5s ease;
+  opacity: 1; /* Ensure starting opacity is 1 */
+  transition: opacity 0.7s ease, transform 0.7s ease; /* Added transform for a subtle animation */
 }
 
 #splash h1 {
-  font-size: 28px;
-  margin-bottom: 20px;
+  font-size: 3.2em; /* Bigger title */
+  margin-bottom: 15px;
+  color: #4CAF50; /* Highlight the title */
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+#splash .icon {
+  font-size: 5em;
+  color: #4CAF50;
+  margin-bottom: 25px;
+  /* Optional: Add a subtle animation to the icon */
+  animation: pulse 2s infinite ease-in-out;
+}
+
+/* Keyframes for the pulse animation */
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
 }
 
 #splash p {
-  font-size: 16px;
-  line-height: 1.5;
-  max-width: 700px;
+  font-size: 1.1em;
+  line-height: 1.6;
+  max-width: 800px;
+  margin-bottom: 15px;
 }
 
+#instructions-list { /* Targeting the new OL element by its ID */
+  /* Re-enable default numbers (which OL does automatically) */
+  list-style-type: decimal; 
+  
+  /* Styling the container box: */
+  padding-left: 0;
+  border-left: 4px solid #4CAF50; /* Instructions border (The Green Line) */
+  padding: 15px 20px 15px 50px; /* IMPORTANT: Increase left padding to make room for numbers and border */
+  margin: 25px auto !important;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  max-width: 800px;
+  text-align: left !important;
+}
+
+#instructions-list li {
+  /* Push list item content away from the number */
+  padding-left: 5px; 
+}
 #splash .citation {
-  margin-top: 20px;
-  font-size: 14px;
+  margin-top: 30px;
+  font-size: 0.9em;
   font-style: italic;
-  color: #ccc;
+  color: #aaa;
+  max-width: 800px;
 }
 
 #startBtn {
   margin-top: 30px;
-  padding: 10px 20px;
-  font-size: 16px;
-  font-weight: 600;
+  padding: 12px 30px; /* Slightly bigger button */
+  font-size: 18px;
+  font-weight: 700;
   color: white;
   background: #4CAF50;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
-  transition: all 0.2s ease-in-out;
+  transition: all 0.3s ease-in-out;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
 }
 
 #startBtn:hover {
   background: #45a049;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+  transform: scale(1.05); /* Zoom effect on hover */
+  box-shadow: 0 6px 15px rgba(0,0,0,0.5);
 }
 
 #splash.hidden {
   opacity: 0;
+  transform: translateY(-50px); /* Slide up as it fades out */
   pointer-events: none;
 }
 
@@ -139,14 +181,14 @@
 <body>
 <!-- Splash Screen -->
 <div id="splash">
-  <h1>Welcome to the Global Building Atlas</h1>
+  <h1>A Global Building Atlas Downloader</h1>
   <p>The Global Building Atlas is a global, high-resolution 3D dataset of the world's 2.75 billion buildings. 
      It was developed by the Technical University of Munich (TUM).</p>
     <p><strong>How to Use this Downloader:</strong></p>
-<ul style="text-align: left; max-width: 700px; margin: 10px auto;">
-  <li>Search for a location and press Enter to fly to it.</li>  
-  <li>Use the "Download GeoJSON" button to save the building data for all the buildings in one square mile around the current map center.</li>
-  </ul>
+<ol id="instructions-list" style="max-width: 700px; margin: 10px auto;">
+  <li>Search for a location and press Enter to fly to it.</li>  
+  <li>Use the "Download GeoJSON" button to save the building data for all the buildings in one square mile around the current map center.</li>
+  </ol>
   <div class="citation">
 <strong>Zhu et al., 2025:</strong> GlobalBuildingAtlas: An Open Global and Complete Dataset of Building Polygons, Heights and LoD1 3D Models. 
 Available at <a href="https://arxiv.org/abs/2506.04106" target="_blank" style="color:#4CAF50;">https://arxiv.org/abs/2506.04106</a>.
