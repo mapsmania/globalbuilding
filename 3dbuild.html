@@ -11,6 +11,32 @@
   body { margin:0; padding:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
   #map { position:absolute; top:0; bottom:0; width:100%; }
 
+  #sizeButtons {
+  display: flex;
+  gap: 6px;
+}
+
+.sizeBtn {
+  background: #ffffff;
+  border: 2px solid #4CAF50;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: 0.2s;
+}
+
+.sizeBtn.active {
+  background: #4CAF50;
+  color: white;
+}
+
+.sizeBtn:hover {
+  background: #4CAF5022;
+}
+
+
   /* Floating Toolbar */
   #toolbar {
     position: absolute;
@@ -201,10 +227,35 @@ Available at <a href="https://arxiv.org/abs/2506.04106" target="_blank" style="c
 <div id="toolbar">
   <input type="text" id="searchBox" placeholder="Search location... (Press Enter)" />  
   <button id="downloadBtn">Download GeoJSON</button> 
+   <div id="sizeButtons">
+        <button class="sizeBtn" data-size="1">1 mi²</button>
+        <button class="sizeBtn" data-size="2">2 mi²</button>
+        <button class="sizeBtn" data-size="3">3 mi²</button>
+    </div>
 </div>
 <div id="map"></div>
 
 <script>
+let currentMiles = 1;   // default selection
+
+// ------------------------
+// Mile size selection
+// ------------------------
+document.querySelectorAll(".sizeBtn").forEach(btn => {
+    btn.addEventListener("click", () => {
+        currentMiles = parseInt(btn.dataset.size);
+
+        // Update active state
+        document.querySelectorAll(".sizeBtn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        updateBuildings();
+    });
+});
+
+// Mark 1 mi² as active on load
+document.querySelector('.sizeBtn[data-size="1"]').classList.add("active");
+
 // ------------------------
 // Projections
 // ------------------------
@@ -273,11 +324,15 @@ document.getElementById("startBtn").addEventListener("click", () => {
 async function updateBuildings() {
     const center = map.getCenter();
     const center3857 = proj4(proj4326, proj3857, [center.lng, center.lat]);
-    const halfMile = 800;
+    const metersPerMile = 1609.34;
+    const halfSize = (currentMiles * metersPerMile) / 2;  // radius from center
 
-    const minX = center3857[0]-halfMile, maxX=center3857[0]+halfMile;
-    const minY = center3857[1]-halfMile, maxY=center3857[1]+halfMile;
-    const bbox = `${minX},${minY},${maxX},${maxY},EPSG:3857`;
+
+    const minX = center3857[0] - halfSize;
+    const maxX = center3857[0] + halfSize;
+    const minY = center3857[1] - halfSize;
+    const maxY = center3857[1] + halfSize;
+     const bbox = `${minX},${minY},${maxX},${maxY},EPSG:3857`;
 
     const url =
       "https://tubvsig-so2sat-vm1.srv.mwn.de/geoserver/ows?" +
