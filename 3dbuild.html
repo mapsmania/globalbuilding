@@ -11,6 +11,7 @@
   body { margin:0; padding:0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
   #map { position:absolute; top:0; bottom:0; width:100%; }
 
+  /* Floating Toolbar */
   #toolbar {
     position: absolute;
     top: 15px;
@@ -25,11 +26,7 @@
     align-items: center;
   }
 
-  #sizeButtons { display:flex; gap:6px; }
-  .sizeBtn { background:#fff; border:2px solid #4CAF50; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:13px; font-weight:600; }
-  .sizeBtn.active { background:#4CAF50; color:white; }
-  .sizeBtn:hover { background:#4CAF5022; }
-
+  /* Download Button */
   #downloadBtn {
     background: #4CAF50;
     color: white;
@@ -42,126 +39,357 @@
     transition: all 0.2s ease-in-out;
   }
 
-  #downloadBtn:hover { background:#45a049; }
+  #downloadBtn:hover {
+    background: #45a049;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.25);
+  }
 
-  #searchBox { width:220px; padding:8px 12px; border-radius:8px; border:1px solid #ccc; font-size:14px; }
+  #downloadBtn:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  }
+
+  /* Search Box */
+  #searchBox {
+    width: 220px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.2s ease-in-out;
+  }
+
+  #searchBox:focus {
+    border-color: #4CAF50;
+    box-shadow: 0 2px 6px rgba(76,175,80,0.3);
+  }
+
+  #searchBox::placeholder {
+    color: #888;
+    font-style: italic;
+  }
+
+
+/* Splash screen overlay */
+#splash {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(30, 30, 30, 0.9)); /* Dark gradient background */
+  color: white;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  z-index: 10000;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  opacity: 1; /* Ensure starting opacity is 1 */
+  transition: opacity 0.7s ease, transform 0.7s ease; /* Added transform for a subtle animation */
+}
+
+#splash h1 {
+  font-size: 3.2em; /* Bigger title */
+  margin-bottom: 15px;
+  color: #4CAF50; /* Highlight the title */
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+#splash .icon {
+  font-size: 5em;
+  color: #4CAF50;
+  margin-bottom: 25px;
+  /* Optional: Add a subtle animation to the icon */
+  animation: pulse 2s infinite ease-in-out;
+}
+
+/* Keyframes for the pulse animation */
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+#splash p {
+  font-size: 1.1em;
+  line-height: 1.6;
+  max-width: 800px;
+  margin-bottom: 15px;
+}
+
+#instructions-list { /* Targeting the new OL element by its ID */
+  /* Re-enable default numbers (which OL does automatically) */
+  list-style-type: decimal; 
+  
+  /* Styling the container box: */
+  padding-left: 0;
+  border-left: 4px solid #4CAF50; /* Instructions border (The Green Line) */
+  padding: 15px 20px 15px 50px; /* IMPORTANT: Increase left padding to make room for numbers and border */
+  margin: 25px auto !important;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  max-width: 800px;
+  text-align: left !important;
+}
+
+#instructions-list li {
+  /* Push list item content away from the number */
+  padding-left: 5px; 
+}
+#splash .citation {
+  margin-top: 30px;
+  font-size: 0.9em;
+  font-style: italic;
+  color: #aaa;
+  max-width: 800px;
+}
+
+#startBtn {
+  margin-top: 30px;
+  padding: 12px 30px; /* Slightly bigger button */
+  font-size: 18px;
+  font-weight: 700;
+  color: white;
+  background: #4CAF50;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.3s ease-in-out;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+}
+
+#startBtn:hover {
+  background: #45a049;
+  transform: scale(1.05); /* Zoom effect on hover */
+  box-shadow: 0 6px 15px rgba(0,0,0,0.5);
+}
+
+#splash.hidden {
+  opacity: 0;
+  transform: translateY(-50px); /* Slide up as it fades out */
+  pointer-events: none;
+}
+
 </style>
 </head>
 <body>
+<!-- Splash Screen -->
+<div id="splash">
+  <h1>A Global Building Atlas Downloader</h1>
+  <p>The Global Building Atlas is a global, high-resolution 3D dataset of the world's 2.75 billion buildings. 
+     It was developed by the Technical University of Munich (TUM).</p>
+    <p><strong>How to Use this Downloader:</strong></p>
+<ol id="instructions-list" style="max-width: 700px; margin: 10px auto;">
+  <li>Search for a location and press Enter to fly to it.</li>  
+  <li>Use the "Download GeoJSON" button to save the building data for all the buildings in one square mile around the current map center.</li>
+  </ol>
+  <div class="citation">
+<strong>Zhu et al., 2025:</strong> GlobalBuildingAtlas: An Open Global and Complete Dataset of Building Polygons, Heights and LoD1 3D Models. 
+Available at <a href="https://arxiv.org/abs/2506.04106" target="_blank" style="color:#4CAF50;">https://arxiv.org/abs/2506.04106</a>.
+</div>
+
+
+  <button id="startBtn">Start</button>
+</div>
 
 <div id="toolbar">
-  <div id="sizeButtons">
-    <button class="sizeBtn" data-size="1">1 mi²</button>
-    <button class="sizeBtn" data-size="2">2 mi²</button>
-    <button class="sizeBtn" data-size="3">3 mi²</button>
-  </div>
   <input type="text" id="searchBox" placeholder="Search location... (Press Enter)" />  
   <button id="downloadBtn">Download GeoJSON</button> 
 </div>
 <div id="map"></div>
 
 <script>
+// ------------------------
+// Utility: Debounce Function
+// ------------------------
+function debounce(func, delay) {
+    let timeoutId;
+    return function(...args) {
+        // Clear the previous timeout
+        clearTimeout(timeoutId);
+        // Set a new timeout
+        timeoutId = setTimeout(() => {
+            func.apply(this, args);
+        }, delay);
+    };
+}
+
+// ------------------------
+// Projections
+// ------------------------
 const proj4326 = proj4("EPSG:4326");
 const proj3857 = proj4("EPSG:3857");
-let lastGeoJSON = { type: "FeatureCollection", features: [] };
-let currentMiles = 1;
-let currentController = null;
-let buildingUpdateTimeout = null;
 
+let lastGeoJSON = { type: "FeatureCollection", features: [] };
+let wfsController = null; // ✅ AbortController for WFS requests
+
+// Reproject coordinates
 function reproj(c) { return proj4(proj3857, proj4326, c); }
+
 function reprojectGeometry(geom) {
     if (geom.type === "Polygon") return { type:"Polygon", coordinates:geom.coordinates.map(ring=>ring.map(reproj)) };
     if (geom.type === "MultiPolygon") return { type:"MultiPolygon", coordinates:geom.coordinates.map(poly=>poly.map(ring=>ring.map(reproj))) };
     return geom;
 }
 
+// ------------------------
+// Initialize Map
+// ------------------------
 const map = new maplibregl.Map({
     style: 'https://tiles.openfreemap.org/styles/positron',
-    center: [-0.092, 51.515],   
+    center: [-0.092, 51.515],    
     zoom: 15,
     pitch: 60,
     container: 'map',
 });
 
 map.addControl(new maplibregl.NavigationControl());
-map.addControl(new maplibregl.AttributionControl({ compact:true }));
 
+map.addControl(new maplibregl.AttributionControl({
+    compact: true,
+    customAttribution: '<a href="https://github.com/zhu-xlab/GlobalBuildingAtlas" target="_blank">Global Building Atlas</a>'
+}));
+
+// ------------------------
+// Add GeoJSON Source & 3D Layer
+// ------------------------
 map.on("load", () => {
-  map.addSource("buildings", { type:"geojson", data:{ type:"FeatureCollection", features:[] } });
-  map.addLayer({ id:"buildings-3d", type:"fill-extrusion", source:"buildings", paint:{ "fill-extrusion-color":"#888", "fill-extrusion-height":["coalesce", ["get","height"], 10], "fill-extrusion-opacity":0.9 }});
-  updateBuildings();
-});
+    map.addSource("buildings", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addLayer({
+        id: "buildings-3d",
+        type: "fill-extrusion",
+        source: "buildings",
+        paint: {
+            "fill-extrusion-color": "#888",
+            "fill-extrusion-height": ["coalesce", ["get", "height"], 10],
+            "fill-extrusion-opacity": 0.9
+        }
+    });
 
-document.querySelectorAll(".sizeBtn").forEach(btn => {
-  btn.addEventListener("click", () => {
-    currentMiles = parseInt(btn.dataset.size);
-    document.querySelectorAll(".sizeBtn").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
+    // Initial load, no debounce needed
     updateBuildings();
-  });
 });
-document.querySelector('.sizeBtn[data-size="1"]').classList.add("active");
 
+// ------------------------
+// Start Button Listener
+// ------------------------
+document.getElementById("startBtn").addEventListener("click", () => {
+    const splash = document.getElementById("splash");
+    splash.classList.add("hidden");
+});
+
+// ------------------------
+// 1-Mile Bounding Box & WFS fetch (Now Abortable)
+// ------------------------
 async function updateBuildings() {
-    if (currentController) currentController.abort();
-    currentController = new AbortController();
+    // 1. Cancel previous request if it exists
+    if (wfsController) {
+        wfsController.abort();
+    }
+    // 2. Create a new AbortController for this request
+    wfsController = new AbortController();
+    const signal = wfsController.signal;
 
     const center = map.getCenter();
     const center3857 = proj4(proj4326, proj3857, [center.lng, center.lat]);
+    const halfMile = 800;
 
-    const metersPerMile = 1609.34;
-    const halfSize = (currentMiles * metersPerMile) / 2;
-
-    const minX = center3857[0] - halfSize;
-    const maxX = center3857[0] + halfSize;
-    const minY = center3857[1] - halfSize;
-    const maxY = center3857[1] + halfSize;
+    const minX = center3857[0]-halfMile, maxX=center3857[0]+halfMile;
+    const minY = center3857[1]-halfMile, maxY=center3857[1]+halfMile;
     const bbox = `${minX},${minY},${maxX},${maxY},EPSG:3857`;
 
     const url =
-      "https://tubvsig-so2sat-vm1.srv.mwn.de/geoserver/ows?" +
-      "service=WFS&version=2.0.0&request=GetFeature&" +
-      "typeNames=global3D:lod1_global&" +
-      "outputFormat=application/json&" +
-      `bbox=${bbox}&srsName=EPSG:3857`;
-
+        "https://tubvsig-so2sat-vm1.srv.mwn.de/geoserver/ows?" +
+        "service=WFS&version=2.0.0&request=GetFeature&" +
+        "typeNames=global3D:lod1_global&" +
+        "outputFormat=application/json&" +
+        `bbox=${bbox}&srsName=EPSG:3857`;
+    
     try {
-      const response = await fetch(url, { signal: currentController.signal });
-      const json = await response.json();
-      json.features = json.features.map(f=>({...f, geometry:reprojectGeometry(f.geometry)}));
-      lastGeoJSON = json;
-      map.getSource("buildings").setData(json);
-    } catch (e) { if (e.name !== "AbortError") console.error(e); }
+        // Pass the AbortController signal to the fetch call
+        const response = await fetch(url, { signal }); 
+        
+        // Check for cancellation
+        if (signal.aborted) return; 
+
+        const json = await response.json();
+        
+        // Check for cancellation again
+        if (signal.aborted) return; 
+
+        json.features = json.features.map(f=>({...f, geometry:reprojectGeometry(f.geometry)}));
+
+        lastGeoJSON = json;
+        map.getSource("buildings").setData(json);
+
+    } catch (error) {
+        // Ignore AbortError, which happens when we cancel the request ourselves
+        if (error.name !== 'AbortError') {
+            console.error("WFS fetch error:", error);
+        }
+    } finally {
+        // Clear the controller reference after the fetch is complete (or aborted)
+        wfsController = null; 
+    }
 }
 
-map.on("moveend", () => {
-    clearTimeout(buildingUpdateTimeout);
-    buildingUpdateTimeout = setTimeout(updateBuildings, 400);
-});
+// ✅ Debounce the updateBuildings function to limit server calls during rapid map movement
+const debouncedUpdateBuildings = debounce(updateBuildings, 300); // 300ms delay
 
+// Replace the direct call with the debounced version
+map.on("moveend", debouncedUpdateBuildings);
+
+// ------------------------
+// Download Button
+// ------------------------
 document.getElementById("downloadBtn").onclick = () => {
     const blob = new Blob([JSON.stringify(lastGeoJSON,null,2)], { type:"application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
     const center = map.getCenter();
-    a.download = `globalbuilding_${center.lng.toFixed(5)}_${center.lat.toFixed(5)}.geojson`;
+    a.download = `globalbuilding_${center.lng.toFixed(5)}_ ${center.lat.toFixed(5)}.geojson`;
     a.click();
     URL.revokeObjectURL(a.href);
 };
 
+// ------------------------
+// Nominatim Search
+// ------------------------
 document.getElementById("searchBox").addEventListener("keydown", async function(e){
     if(e.key === "Enter"){
         const query = this.value;
         if(!query) return;
+
+        // Immediately cancel any pending WFS request if a search is initiated
+        if (wfsController) {
+            wfsController.abort();
+            wfsController = null; // Clear the controller
+        }
+        
         const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1`;
         try {
-            const response = await fetch(url, {headers:{'Accept-Language':'en'}});
+            const response = await fetch(url, {headers: {'Accept-Language':'en'}});
             const data = await response.json();
-            if(data.length){ map.flyTo({ center:[parseFloat(data[0].lon), parseFloat(data[0].lat)], zoom:17 }); }
-            else alert("Location not found.");
-        } catch(err){ alert("Search failed."); }
+            if(data.length){
+                const lon = parseFloat(data[0].lon);
+                const lat = parseFloat(data[0].lat);
+                // Note: map.flyTo triggers a 'moveend', which will call the debounced function
+                map.flyTo({ center:[lon, lat], zoom:17 }); 
+            } else {
+                alert("Location not found.");
+            }
+        } catch(err){
+            console.error("Search error:", err);
+            alert("Search failed.");
+        }
     }
 });
 </script>
 </body>
-</html>
+</html>'
