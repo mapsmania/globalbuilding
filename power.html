@@ -100,15 +100,44 @@ function calculateDistance(coord1, coord2) {
  * This is now safer as it relies on the pre-processed global feature array.
  */
 function getConnectionCoordinates(feature) {
-    if (!feature || !feature.geometry || !feature.geometry.coordinates || feature.geometry.coordinates.length === 0) {
-        return null; 
+    const geom = feature.geometry;
+
+    if (!geom || !geom.coordinates) return null;
+
+    // Handle Polygon
+    let ring = null;
+    if (geom.type === "Polygon") {
+        ring = geom.coordinates[0];
+    } else if (geom.type === "MultiPolygon") {
+        ring = geom.coordinates[0][0];
+    } else {
+        return null;
     }
-    const coordArray = feature.geometry.coordinates[0][0][0]; 
-    
-    if (coordArray && coordArray.length === 2) {
-         return maplibregl.LngLat.convert(coordArray); 
+
+    // Compute centroid of first ring
+    let area = 0, x = 0, y = 0;
+
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const [x1, y1] = ring[j];
+        const [x2, y2] = ring[i];
+        const f = x1 * y2 - x2 * y1;
+        area += f;
+        x += (x1 + x2) * f;
+        y += (y1 + y2) * f;
     }
-    return null; 
+
+    area *= 0.5;
+
+    if (area === 0) {
+        // fallback: use first coordinate
+        const [lng, lat] = ring[0];
+        return { lng, lat };
+    }
+
+    const lng = x / (6 * area);
+    const lat = y / (6 * area);
+
+    return { lng, lat };
 }
 
 /**
