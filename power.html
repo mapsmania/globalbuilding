@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>3D Power Outage Game</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+<style>
+    body { margin: 0; padding: 0; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<script>
+// --- CORE CONFIGURATION ---
+const POWER_LAYER_ID = 'buildings-3d';
+const FLICKER_RATE_MS = 100; // How fast the lights toggle
+const DEFAULT_COLOR = '#888888'; 
+
+// Color definitions for the power states
+const POWER_COLORS = {
+    'ON': '#FFFFB3',    // Warm light
+    'OFF': '#1A1A1A',   // Darkness
+    'FLICKER': '#777777' // Temporary color during flicker cycle
+};
+
+// Global state tracking
+const buildingPowerStates = {}; 
+const flickeringBuildings = {}; // Tracks the ON/OFF state of flickering buildings
+
+// --- COORDINATE REPROJECTION ---
+
+// Define projections (Confirmed to work with the data)
+const proj3857 = proj4('EPSG:3857');
+const proj4326 = proj4('EPSG:4326');
+
+// Reproject a single coordinate
+function reprojectCoord(coord) {
+    return proj4(proj3857, proj4326, coord);
+}
+
+// Reproject geometry
+function reprojectGeometry(geom) {
+    if (geom.type === "Polygon") {
+        return { type: "Polygon", coordinates: geom.coordinates.map(ring => ring.map(reprojectCoord)) };
+    }
+    if (geom.type === "MultiPolygon") {
+        return { type: "MultiPolygon", coordinates: geom.coordinates.map(poly => poly.map(ring => ring.map(reprojectCoord))) };
+    }
+    return geom;
+}
+
+
+// --- DYNAMIC GAME LOGIC ---
+
+/**
+ * Initializes the power state for all buildings loaded from the GeoJSON.
+ */
+function initializePowerStates(features) {
+    features.forEach(f => {
+        const id = f.properties.id; 
+        
+        // Randomly assign a starting state: 
+        // 75% ON, 15% OFF (outage), 10% FLICKER (unstable)
+        const rand = Math.random();
+        let initialState;
+        if (rand < 0.75) {
+            initialState = 'ON';
+        } else if (rand < 0.90) {
+            initialState = 'OFF';
+        } else {
+            initialState = 'FLICKER';
+        }
+        
+        buildingPowerStates[id] = initialState;
+        if (initialState === 'FLICKER') {
+            flickeringBuildings[id] = false; // Start flicker cycle OFF
+        }
+    });
+}
+
+/**
+ * Updates the MapLibre layer's color property based on the global state.
+ */
+function updateBuildingColors() {
+    // Start the expression with ['match', ['get', 'id']]
+    const colorExpression = ['match', ['get', 'id']];
+
+    for (const id in buildingPowerStates) {
+        let color;
+        const state = buildingPowerStates[id];
+
+        if (state === 'FLICKER') {
+            // Apply the toggled flicker state
+            const isCurrentlyOn = flickeringBuildings[id];
+            color = isCurrentlyOn ? POWER_COLORS['ON'] : POWER_COLORS['OFF'];
+        } else {
+            // Apply static ON or OFF color
+            color = POWER_COLORS[state];
+        }
+
+        colorExpression.push(id, color);
+    }
+    
+    // Add the default fallback color at the end
+    colorExpression.push(DEFAULT_COLOR);
+
+    // Apply the full dynamic color expression to the map layer
+    map.setPaintProperty(POWER_LAYER_ID, 'fill-extrusion-color', colorExpression);
+}
+
+
+/**
+ * Sets up the timed loop to handle the flickering effect.
+ */
+function startFlickerLoop() {
+    setInterval(() => {
+        let needsUpdate = false;
+        
+        // 1. Toggle the internal state for all buildings marked as 'FLICKER'
+        for (const id in buildingPowerStates) {
+            if (buildingPowerStates[id] === 'FLICKER') {
+                flickeringBuildings[id] = !flickeringBuildings[id];
+                needsUpdate = true;
+            }
+        }
+        
+        // 2. Only re-render the map layer if a flicker state changed
+        if (needsUpdate) {
+            updateBuildingColors();
+        }
+        
+    }, FLICKER_RATE_MS);
+}
+
+
+/**
+ * Handles clicks on buildings to restore power (Game Mechanic Example).
+ */
+function handleBuildingClick(e) {
+    // Query the features under the mouse click
+    const features = map.queryRenderedFeatures(e.point, {
+        layers: [POWER_LAYER_ID]
+    });
+
+    if (features.length > 0) {
+        const clickedFeature = features[0];
+        const id = clickedFeature.properties.id;
+
+        // Only restore power if the building is OFF or FLICKERING
+        if (buildingPowerStates[id] !== 'ON') {
+            console.log(`Restoring power to building ID: ${id}`);
+            
+            // 1. Update the state
+            buildingPowerStates[id] = 'ON';
+            delete flickeringBuildings[id]; // Remove from flicker tracking if it was flickering
+
+            // 2. Immediately update the map colors
+            updateBuildingColors();
+        }
+    }
+}
+
+
+// --- MAP INITIALIZATION ---
+
+const map = new maplibregl.Map({
+    style: 'https://tiles.openfreemap.org/styles/positron',
+    center: [-0.092, 51.515],
+    zoom: 16,
+    pitch: 60,
+    bearing: -20,
+    container: 'map',
+});
+  
+map.on('load', () => {
+    fetch("https://mapsmania.github.io/globalbuilding/building.geojson")
+        .then(r => r.json())
+        .then(data => {
+            console.log("Loaded features:", data.features.length);
+
+            // Reproject all features to WGS84
+            data.features = data.features.map(f => ({
+                ...f,
+                geometry: reprojectGeometry(f.geometry)
+            }));
+
+            // Initialize the game state before adding the layer
+            initializePowerStates(data.features);
+
+            // Add as GeoJSON source
+            map.addSource('buildings', { type: 'geojson', data: data });
+
+            // Add 3D extrusion layer
+            map.addLayer({
+                id: POWER_LAYER_ID,
+                type: 'fill-extrusion',
+                source: 'buildings',
+                paint: {
+                    // Initial color will be set by the updateBuildingColors function
+                    'fill-extrusion-color': DEFAULT_COLOR, 
+                    'fill-extrusion-height': ['coalesce', ['get', 'height'], 10],
+                    'fill-extrusion-base': 0,
+                    'fill-extrusion-opacity': 0.9
+                }
+            });
+
+            // Set the initial colors on the map
+            updateBuildingColors();
+
+            // Start the dynamic flicker loop
+            startFlickerLoop();
+
+            // Add interactivity
+            map.on('click', POWER_LAYER_ID, handleBuildingClick);
+
+            // Add navigation controls
+            map.addControl(new maplibregl.NavigationControl());
+        });
+});
+</script>
+</body>
+</html>
