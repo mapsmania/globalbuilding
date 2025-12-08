@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>3D Power Outage Game</title>
+<title>Power Grid Routing Puzzle (Budget Constraint)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
@@ -10,40 +10,66 @@
 <style>
     body { margin: 0; padding: 0; }
     #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    
+    /* Style for the Heads-Up Display (HUD) */
+    #hud { 
+        position: absolute; 
+        top: 10px; 
+        left: 10px; 
+        background: rgba(0,0,0,0.8); 
+        color: white; 
+        padding: 15px; 
+        border-radius: 8px;
+        z-index: 10;
+        font-family: sans-serif;
+    }
+    #hud h2 { margin-top: 0; font-size: 1.2em; }
+    #hud p { margin: 5px 0; font-size: 1em; }
+    .status-alert { color: yellow; font-weight: bold; }
 </style>
 </head>
 <body>
+<div id="hud">
+    <h2>⚡ Power Grid Puzzle</h2>
+    <p>Connected Buildings: <span id="connected-count">0</span> / <span id="total-buildings">0</span></p>
+    <p>Cable Used: <span id="used-cable">0</span> m</p>
+    <p>Cable Budget: <span id="budget-remaining">0</span> m</p>
+    <p class="status-alert" id="game-status"></p>
+</div>
 <div id="map"></div>
 
 <script>
 // --- CORE CONFIGURATION ---
 const POWER_LAYER_ID = 'buildings-3d';
-const FLICKER_RATE_MS = 100; // How fast the lights toggle
-const DEFAULT_COLOR = '#888888'; 
-
-// Color definitions for the power states
 const POWER_COLORS = {
     'ON': '#FFFFB3',    // Warm light
-    'OFF': '#1A1A1A',   // Darkness
-    'FLICKER': '#777777' // Temporary color during flicker cycle
+    'OFF': '#1A1A1A'    // Darkness
 };
+const DEFAULT_COLOR = '#888888'; 
 
-// Global state tracking
-const buildingPowerStates = {}; 
-const flickeringBuildings = {}; // Tracks the ON/OFF state of flickering buildings
+// Game Budget and Constraints
+const CABLE_BUDGET = 10000; // Total meters of cable available
+const MAX_JUMP_DISTANCE = 500; // Max meters for a single connection (Jump Constraint)
+
+// Global State Tracking
+let totalBuildingsCount = 0;
+let powerSourceID = null;
+let currentConnectionTargetID = null; // The last building successfully connected ('ON')
+let usedCableLength = 0;
+const buildingPowerStates = {}; // { id: 'ON' | 'OFF' }
+const connectedBuildingIDs = new Set();
+const powerLineGeometry = { type: 'FeatureCollection', features: [] }; // GeoJSON for line segments
 
 // --- COORDINATE REPROJECTION ---
 
-// Define projections (Confirmed to work with the data)
+// Define projections (Assumed to be EPSG:3857 based on prior success)
 const proj3857 = proj4('EPSG:3857');
 const proj4326 = proj4('EPSG:4326');
 
-// Reproject a single coordinate
 function reprojectCoord(coord) {
     return proj4(proj3857, proj4326, coord);
 }
 
-// Reproject geometry
 function reprojectGeometry(geom) {
     if (geom.type === "Polygon") {
         return { type: "Polygon", coordinates: geom.coordinates.map(ring => ring.map(reprojectCoord)) };
@@ -55,112 +81,159 @@ function reprojectGeometry(geom) {
 }
 
 
-// --- DYNAMIC GAME LOGIC ---
+// --- UTILITY FUNCTIONS ---
 
 /**
- * Initializes the power state for all buildings loaded from the GeoJSON.
+ * Calculates the approximate distance between two LngLat coordinates using the Haversine formula.
  */
-function initializePowerStates(features) {
-    features.forEach(f => {
-        const id = f.properties.id; 
-        
-        // Randomly assign a starting state: 
-        // 75% ON, 15% OFF (outage), 10% FLICKER (unstable)
-        const rand = Math.random();
-        let initialState;
-        if (rand < 0.75) {
-            initialState = 'ON';
-        } else if (rand < 0.90) {
-            initialState = 'OFF';
-        } else {
-            initialState = 'FLICKER';
-        }
-        
-        buildingPowerStates[id] = initialState;
-        if (initialState === 'FLICKER') {
-            flickeringBuildings[id] = false; // Start flicker cycle OFF
-        }
-    });
+function calculateDistance(coord1, coord2) {
+    const R = 6371000; // Radius of Earth in meters
+    const dLat = (coord2.lat - coord1.lat) * (Math.PI / 180);
+    const dLon = (coord2.lng - coord1.lng) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(coord1.lat * (Math.PI / 180)) * Math.cos(coord2.lat * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
 }
 
 /**
- * Updates the MapLibre layer's color property based on the global state.
+ * Retrieves the connection point (approx. centroid) for a given building feature.
+ */
+function getConnectionCoordinates(feature) {
+    // Uses the first coordinate of the first ring as a representative point
+    const coordArray = feature.geometry.coordinates[0][0][0]; 
+    return maplibregl.LngLat.convert(coordArray);
+}
+
+/**
+ * Updates the visibility of the connected buildings and the HUD.
  */
 function updateBuildingColors() {
-    // Start the expression with ['match', ['get', 'id']]
     const colorExpression = ['match', ['get', 'id']];
 
     for (const id in buildingPowerStates) {
-        let color;
-        const state = buildingPowerStates[id];
-
-        if (state === 'FLICKER') {
-            // Apply the toggled flicker state
-            const isCurrentlyOn = flickeringBuildings[id];
-            color = isCurrentlyOn ? POWER_COLORS['ON'] : POWER_COLORS['OFF'];
-        } else {
-            // Apply static ON or OFF color
-            color = POWER_COLORS[state];
-        }
-
-        colorExpression.push(id, color);
+        colorExpression.push(id, POWER_COLORS[buildingPowerStates[id]]);
     }
     
-    // Add the default fallback color at the end
     colorExpression.push(DEFAULT_COLOR);
 
-    // Apply the full dynamic color expression to the map layer
     map.setPaintProperty(POWER_LAYER_ID, 'fill-extrusion-color', colorExpression);
+    updateGameHUD();
 }
 
-
 /**
- * Sets up the timed loop to handle the flickering effect.
+ * Updates the game's Heads-Up Display (HUD).
  */
-function startFlickerLoop() {
-    setInterval(() => {
-        let needsUpdate = false;
-        
-        // 1. Toggle the internal state for all buildings marked as 'FLICKER'
-        for (const id in buildingPowerStates) {
-            if (buildingPowerStates[id] === 'FLICKER') {
-                flickeringBuildings[id] = !flickeringBuildings[id];
-                needsUpdate = true;
-            }
-        }
-        
-        // 2. Only re-render the map layer if a flicker state changed
-        if (needsUpdate) {
-            updateBuildingColors();
-        }
-        
-    }, FLICKER_RATE_MS);
+function updateGameHUD(statusMessage = "Select the next nearest unlit building.") {
+    const remainingCable = CABLE_BUDGET - usedCableLength;
+    
+    document.getElementById('connected-count').innerText = connectedBuildingIDs.size;
+    document.getElementById('total-buildings').innerText = totalBuildingsCount;
+    document.getElementById('used-cable').innerText = usedCableLength.toFixed(0);
+    document.getElementById('budget-remaining').innerText = remainingCable.toFixed(0);
+    document.getElementById('game-status').innerText = statusMessage;
+    
+    // Highlight if budget is low
+    document.getElementById('budget-remaining').style.color = remainingCable < 1000 ? 'red' : 'lightgreen';
+}
+
+
+// --- GAME LOGIC ---
+
+/**
+ * Initializes the power state (all OFF except for one source).
+ */
+function initializePowerStates(features) {
+    totalBuildingsCount = features.length;
+    
+    // 1. Set all buildings to 'OFF'
+    features.forEach(f => {
+        buildingPowerStates[f.properties.id] = 'OFF';
+    });
+
+    // 2. Select a random Source Node (must be a building)
+    const randomIndex = Math.floor(Math.random() * features.length);
+    const sourceBuilding = features[randomIndex];
+    
+    powerSourceID = sourceBuilding.properties.id;
+    currentConnectionTargetID = powerSourceID;
+    
+    // 3. Turn the source ON and add it to the connected set
+    buildingPowerStates[powerSourceID] = 'ON';
+    connectedBuildingIDs.add(powerSourceID);
 }
 
 
 /**
- * Handles clicks on buildings to restore power (Game Mechanic Example).
+ * Handles clicks on buildings to establish connections.
  */
 function handleBuildingClick(e) {
-    // Query the features under the mouse click
-    const features = map.queryRenderedFeatures(e.point, {
-        layers: [POWER_LAYER_ID]
-    });
+    // Only allow interaction if we haven't exhausted the budget
+    if ((CABLE_BUDGET - usedCableLength) <= 0) {
+        updateGameHUD("Budget Exhausted! Cannot connect any more buildings.");
+        return;
+    }
+
+    const features = map.queryRenderedFeatures(e.point, { layers: [POWER_LAYER_ID] });
 
     if (features.length > 0) {
         const clickedFeature = features[0];
-        const id = clickedFeature.properties.id;
+        const clickedID = clickedFeature.properties.id;
 
-        // Only restore power if the building is OFF or FLICKERING
-        if (buildingPowerStates[id] !== 'ON') {
-            console.log(`Restoring power to building ID: ${id}`);
-            
-            // 1. Update the state
-            buildingPowerStates[id] = 'ON';
-            delete flickeringBuildings[id]; // Remove from flicker tracking if it was flickering
+        // --- Check 1: Must target an unlit building ---
+        if (connectedBuildingIDs.has(clickedID)) {
+            updateGameHUD("Building is already powered. Connect to an unlit neighbor.");
+            return;
+        }
 
-            // 2. Immediately update the map colors
-            updateBuildingColors();
+        const clickedCoordinates = getConnectionCoordinates(clickedFeature);
+        const sourceFeature = map.getSource('buildings')._data.features.find(f => f.properties.id === currentConnectionTargetID);
+        const sourceCoordinates = getConnectionCoordinates(sourceFeature);
+        
+        const proposedLength = calculateDistance(sourceCoordinates, clickedCoordinates);
+        
+        // --- Constraint Check 2: Max Jump Distance Limit ---
+        if (proposedLength > MAX_JUMP_DISTANCE) {
+            updateGameHUD(`Connection failed! Path too long (${proposedLength.toFixed(0)}m). Limit: ${MAX_JUMP_DISTANCE}m.`);
+            return;
+        }
+
+        // --- Constraint Check 3: CABLE BUDGET LIMIT ---
+        const remainingBudget = CABLE_BUDGET - usedCableLength;
+        if (proposedLength > remainingBudget) {
+            updateGameHUD(`Connection failed! Proposed length (${proposedLength.toFixed(0)}m) exceeds remaining budget of ${remainingBudget.toFixed(0)}m. Max buildings connected.`);
+            return;
+        }
+        
+        // --- SUCCESSFUL CONNECTION ---
+        
+        // 1. Update Game State & Budget
+        usedCableLength += proposedLength; 
+        connectedBuildingIDs.add(clickedID);
+        buildingPowerStates[clickedID] = 'ON';
+        currentConnectionTargetID = clickedID; 
+        
+        // 2. Add Line Segment
+        const newLineFeature = {
+            type: 'Feature',
+            geometry: {
+                type: 'LineString',
+                coordinates: [
+                    [sourceCoordinates.lng, sourceCoordinates.lat],
+                    [clickedCoordinates.lng, clickedCoordinates.lat]
+                ]
+            }
+        };
+        powerLineGeometry.features.push(newLineFeature);
+
+        // 3. Update the Map & HUD
+        map.getSource('power-lines').setData(powerLineGeometry);
+        updateBuildingColors(); 
+
+        // 4. Check Win Condition
+        if (connectedBuildingIDs.size === totalBuildingsCount) {
+            updateGameHUD(`🎉 All ${totalBuildingsCount} Buildings Powered! Total Cable Used: ${usedCableLength.toFixed(0)}m.`);
+            map.off('click', POWER_LAYER_ID, handleBuildingClick); // Disable further clicks
         }
     }
 }
@@ -181,27 +254,22 @@ map.on('load', () => {
     fetch("https://mapsmania.github.io/globalbuilding/building.geojson")
         .then(r => r.json())
         .then(data => {
-            console.log("Loaded features:", data.features.length);
-
-            // Reproject all features to WGS84
+            // Reproject all features
             data.features = data.features.map(f => ({
                 ...f,
                 geometry: reprojectGeometry(f.geometry)
             }));
 
-            // Initialize the game state before adding the layer
+            // Initialize game state (find source, set others OFF)
             initializePowerStates(data.features);
 
-            // Add as GeoJSON source
+            // 1. Add Buildings Source and Layer (The 3D puzzle pieces)
             map.addSource('buildings', { type: 'geojson', data: data });
-
-            // Add 3D extrusion layer
             map.addLayer({
                 id: POWER_LAYER_ID,
                 type: 'fill-extrusion',
                 source: 'buildings',
                 paint: {
-                    // Initial color will be set by the updateBuildingColors function
                     'fill-extrusion-color': DEFAULT_COLOR, 
                     'fill-extrusion-height': ['coalesce', ['get', 'height'], 10],
                     'fill-extrusion-base': 0,
@@ -209,16 +277,25 @@ map.on('load', () => {
                 }
             });
 
-            // Set the initial colors on the map
+            // 2. Add Power Lines Source and Layer (The connections)
+            map.addSource('power-lines', { type: 'geojson', data: powerLineGeometry });
+            map.addLayer({
+                id: 'connections-line',
+                type: 'line',
+                source: 'power-lines',
+                paint: {
+                    'line-color': '#00FF00', // Bright green for the power line
+                    'line-width': 4,
+                    'line-opacity': 0.8
+                }
+            });
+
+            // Set the initial colors and HUD
             updateBuildingColors();
+            updateGameHUD();
 
-            // Start the dynamic flicker loop
-            startFlickerLoop();
-
-            // Add interactivity
+            // Add interactivity and controls
             map.on('click', POWER_LAYER_ID, handleBuildingClick);
-
-            // Add navigation controls
             map.addControl(new maplibregl.NavigationControl());
         });
 });
