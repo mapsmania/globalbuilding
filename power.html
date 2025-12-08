@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Power Grid Routing Puzzle (Budget Constraint)</title>
+<title>Power Grid Routing Puzzle (Fixed Data Access)</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
@@ -53,16 +53,15 @@ const MAX_JUMP_DISTANCE = 500; // Max meters for a single connection (Jump Const
 
 // Global State Tracking
 let totalBuildingsCount = 0;
+let reprojectedFeatures = []; // <-- THE NEW GLOBAL STORE FOR RELIABLE FEATURE ACCESS
 let powerSourceID = null;
-let currentConnectionTargetID = null; // The last building successfully connected ('ON')
+let currentConnectionTargetID = null; 
 let usedCableLength = 0;
-const buildingPowerStates = {}; // { id: 'ON' | 'OFF' }
+const buildingPowerStates = {}; 
 const connectedBuildingIDs = new Set();
-const powerLineGeometry = { type: 'FeatureCollection', features: [] }; // GeoJSON for line segments
+const powerLineGeometry = { type: 'FeatureCollection', features: [] }; 
 
 // --- COORDINATE REPROJECTION ---
-
-// Define projections (Assumed to be EPSG:3857 based on prior success)
 const proj3857 = proj4('EPSG:3857');
 const proj4326 = proj4('EPSG:4326');
 
@@ -84,7 +83,7 @@ function reprojectGeometry(geom) {
 // --- UTILITY FUNCTIONS ---
 
 /**
- * Calculates the approximate distance between two LngLat coordinates using the Haversine formula.
+ * Calculates the approximate distance between two LngLat coordinates.
  */
 function calculateDistance(coord1, coord2) {
     const R = 6371000; // Radius of Earth in meters
@@ -98,11 +97,18 @@ function calculateDistance(coord1, coord2) {
 
 /**
  * Retrieves the connection point (approx. centroid) for a given building feature.
+ * This is now safer as it relies on the pre-processed global feature array.
  */
 function getConnectionCoordinates(feature) {
-    // Uses the first coordinate of the first ring as a representative point
+    if (!feature || !feature.geometry || !feature.geometry.coordinates || feature.geometry.coordinates.length === 0) {
+        return null; 
+    }
     const coordArray = feature.geometry.coordinates[0][0][0]; 
-    return maplibregl.LngLat.convert(coordArray);
+    
+    if (coordArray && coordArray.length === 2) {
+         return maplibregl.LngLat.convert(coordArray); 
+    }
+    return null; 
 }
 
 /**
@@ -151,14 +157,14 @@ function initializePowerStates(features) {
         buildingPowerStates[f.properties.id] = 'OFF';
     });
 
-    // 2. Select a random Source Node (must be a building)
+    // 2. Select a random Source Node
     const randomIndex = Math.floor(Math.random() * features.length);
     const sourceBuilding = features[randomIndex];
     
     powerSourceID = sourceBuilding.properties.id;
     currentConnectionTargetID = powerSourceID;
     
-    // 3. Turn the source ON and add it to the connected set
+    // 3. Turn the source ON
     buildingPowerStates[powerSourceID] = 'ON';
     connectedBuildingIDs.add(powerSourceID);
 }
@@ -168,9 +174,10 @@ function initializePowerStates(features) {
  * Handles clicks on buildings to establish connections.
  */
 function handleBuildingClick(e) {
-    // Only allow interaction if we haven't exhausted the budget
-    if ((CABLE_BUDGET - usedCableLength) <= 0) {
-        updateGameHUD("Budget Exhausted! Cannot connect any more buildings.");
+    const remainingBudget = CABLE_BUDGET - usedCableLength;
+    
+    if (remainingBudget <= 0) {
+        updateGameHUD("Budget Exhausted! Game Over.");
         return;
     }
 
@@ -186,8 +193,15 @@ function handleBuildingClick(e) {
             return;
         }
 
+        // --- Find Source Coordinates (FIXED RELIABLE ACCESS) ---
+        const sourceFeature = reprojectedFeatures.find(f => f.properties.id === currentConnectionTargetID);
+        
+        if (!sourceFeature) {
+             console.error("Source feature not found in global store. Cannot connect.");
+             return;
+        }
+
         const clickedCoordinates = getConnectionCoordinates(clickedFeature);
-        const sourceFeature = map.getSource('buildings')._data.features.find(f => f.properties.id === currentConnectionTargetID);
         const sourceCoordinates = getConnectionCoordinates(sourceFeature);
         
         const proposedLength = calculateDistance(sourceCoordinates, clickedCoordinates);
@@ -199,7 +213,6 @@ function handleBuildingClick(e) {
         }
 
         // --- Constraint Check 3: CABLE BUDGET LIMIT ---
-        const remainingBudget = CABLE_BUDGET - usedCableLength;
         if (proposedLength > remainingBudget) {
             updateGameHUD(`Connection failed! Proposed length (${proposedLength.toFixed(0)}m) exceeds remaining budget of ${remainingBudget.toFixed(0)}m. Max buildings connected.`);
             return;
@@ -233,7 +246,9 @@ function handleBuildingClick(e) {
         // 4. Check Win Condition
         if (connectedBuildingIDs.size === totalBuildingsCount) {
             updateGameHUD(`🎉 All ${totalBuildingsCount} Buildings Powered! Total Cable Used: ${usedCableLength.toFixed(0)}m.`);
-            map.off('click', POWER_LAYER_ID, handleBuildingClick); // Disable further clicks
+            map.off('click', POWER_LAYER_ID, handleBuildingClick); 
+        } else {
+            updateGameHUD(`Cable Used: ${usedCableLength.toFixed(0)}m. Budget Remaining: ${remainingBudget.toFixed(0)}m. Keep connecting!`);
         }
     }
 }
@@ -260,10 +275,13 @@ map.on('load', () => {
                 geometry: reprojectGeometry(f.geometry)
             }));
 
-            // Initialize game state (find source, set others OFF)
-            initializePowerStates(data.features);
+            // Store the reprojected features globally for reliable access later
+            reprojectedFeatures = data.features;
 
-            // 1. Add Buildings Source and Layer (The 3D puzzle pieces)
+            // Initialize game state (find source, set others OFF)
+            initializePowerStates(reprojectedFeatures);
+
+            // 1. Add Buildings Source and Layer
             map.addSource('buildings', { type: 'geojson', data: data });
             map.addLayer({
                 id: POWER_LAYER_ID,
@@ -277,7 +295,7 @@ map.on('load', () => {
                 }
             });
 
-            // 2. Add Power Lines Source and Layer (The connections)
+            // 2. Add Power Lines Source and Layer
             map.addSource('power-lines', { type: 'geojson', data: powerLineGeometry });
             map.addLayer({
                 id: 'connections-line',
