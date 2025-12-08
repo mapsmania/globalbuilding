@@ -44,7 +44,7 @@
 /* ---------------------- Config ---------------------- */
 const POWER_LAYER_ID = 'buildings-3d';
 const POWER_COLORS = { ON: "#FFFFB3", OFF: "#1A1A1A" };
-const DEFAULT_COLOR = "#888888";
+const DEFAULT_COLOR = "#000";
 
 const CABLE_BUDGET = 10000;
 const MAX_JUMP_DISTANCE = 500;
@@ -267,7 +267,15 @@ const map = new maplibregl.Map({
     style: {
         version: 8,
         sources: {},
-        layers: []
+        layers: [
+            {
+                id: "background",
+                type: "background",
+                paint: {
+                    "background-color": "#888888"   // <- grey background
+                }
+            }
+        ]
     },
     center: [-0.092, 51.515],
     zoom: 16,
@@ -275,7 +283,6 @@ const map = new maplibregl.Map({
     bearing: -20,
     container: "map"
 });
-
 
 map.on("load", () => {
     fetch("https://mapsmania.github.io/globalbuilding/building.geojson")
