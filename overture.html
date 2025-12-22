@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Overture Buildings Downloader (1km bbox)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<!-- MapLibre -->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@5.15.0/dist/maplibre-gl.js"></script>
+
+<!-- DuckDB-Wasm -->
+<script type="module">
+import * as duckdb from "https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm";
+window.duckdb = duckdb;
+</script>
+
+<style>
+body { margin: 0; font-family: sans-serif; }
+#map { position: absolute; top: 0; bottom: 0; width: 100%; }
+#panel {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: white;
+  padding: 12px;
+  width: 280px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+  z-index: 10;
+}
+button {
+  width: 100%;
+  padding: 10px;
+  margin-top: 8px;
+  font-weight: bold;
+}
+small { color: #666; }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+<div id="panel">
+  <h3>Overture Buildings Downloader</h3>
+  <small>1km² bbox around map center</small>
+  <button id="downloadBtn">Download Buildings</button>
+  <div id="status" style="margin-top:8px;font-size:12px;">Click the button to download</div>
+</div>
+
+<script type="module">
+const map = new maplibregl.Map({
+  container: "map",
+  style: "https://tiles.openfreemap.org/styles/bright",
+  center: [-74.006, 40.7128],
+  zoom: 14
+});
+
+const btn = document.getElementById("downloadBtn");
+const status = document.getElementById("status");
+
+// Helper: compute 1km bbox around center (approx)
+function get1kmBBox() {
+  const center = map.getCenter();
+  const lat = center.lat;
+  const lon = center.lng;
+
+  // Approx 0.009 degrees ~ 1 km at equator
+  const delta = 0.0045;
+
+  const minX = lon - delta;
+  const maxX = lon + delta;
+  const minY = lat - delta;
+  const maxY = lat + delta;
+  return [minX, minY, maxX, maxY];
+}
+
+btn.onclick = async () => {
+  btn.disabled = true;
+  status.innerText = "Loading DuckDB…";
+
+  const [minX, minY, maxX, maxY] = get1kmBBox();
+
+  const bundle = await duckdb.selectBundle({ mvp: duckdb.getJsDelivrBundles().mvp });
+  const worker = new Worker(bundle.mainWorker);
+  const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
+  await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+  const conn = await db.connect();
+
+  status.innerText = "Querying Overture…";
+
+  const sql = `
+COPY (
+  SELECT id, height, confidence, geometry
+  FROM read_parquet(
+    'https://overturemapswestus2.blob.core.windows.net/release/2025-12-17.0/theme=buildings/type=building/*.parquet'
+  )
+  WHERE
+    bbox.xmin >= ${minX} AND bbox.xmax <= ${maxX}
+    AND
+    bbox.ymin >= ${minY} AND bbox.ymax <= ${maxY}
+) TO 'buildings.geojson'
+WITH (FORMAT GDAL, DRIVER 'GeoJSON');
+`;
+
+  await conn.query(sql);
+
+  const data = await db.copyFileToBuffer("buildings.geojson");
+  const blob = new Blob([data], { type: "application/geo+json" });
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "buildings.geojson";
+  a.click();
+  URL.revokeObjectURL(url);
+
+  status.innerText = "Download complete";
+  btn.disabled = false;
+};
+</script>
+
+</body>
+</html>
