@@ -2,19 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>MapLibre 3D Buildings + Fireworks</title>
+<title>MapLibre 3D Buildings + Cinematic Camera</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
-
-<style>
-body { margin: 0; }
-#map { position: absolute; top: 0; bottom: 0; width: 100%; }
-</style>
+<style>body { margin: 0; overflow: hidden; } #map { position: absolute; top: 0; bottom: 0; width: 100%; background-color: #000; }</style>
 </head>
-
 <body>
 <div id="map"></div>
 
@@ -26,69 +20,82 @@ const map = new maplibregl.Map({
   container: 'map',
   style: 'https://tiles.openfreemap.org/styles/positron',
   center: [-0.092, 51.515],
-  zoom: 16,
+  zoom: 16.5,
   pitch: 60,
-  bearing: -20
+  bearing: -20,
+  antialias: true,
+  interactive: true // Set to false if you want a pure "screensaver" mode
 });
-map.addControl(new maplibregl.NavigationControl());
+
+/* ---------------- Camera Animation Logic ---------------- */
+let lastTime = 0;
+function rotateCamera(timestamp) {
+  // Speed controls
+  const rotationSpeed = 0.05; // Degrees per frame
+  const tiltSpeed = timestamp / 2000; // Oscillation speed
+  
+  // Update bearing (rotation)
+  const currentBearing = map.getBearing();
+  map.setBearing(currentBearing + rotationSpeed);
+
+  // Update pitch (tilt) - oscillates between 45 and 75 degrees
+  const newPitch = 60 + Math.sin(tiltSpeed) * 15;
+  map.setPitch(newPitch);
+
+  requestAnimationFrame(rotateCamera);
+}
 
 /* ---------------- Firework Factory ---------------- */
-function createFirework(position, scale) {
-  const count = 250;
+function createFirework(lng, lat) {
+  const targetAltitude = 100 + Math.random() * 120;
+  const mercGround = maplibregl.MercatorCoordinate.fromLngLat({ lng, lat }, 0);
+  const scale = mercGround.meterInMercatorCoordinateUnits();
+
+  const count = 180;
   const geometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(count * 3);
-  const velocities = [];
-  const life = [];
-
-  for (let i = 0; i < count; i++) {
-    positions[i*3] = 0;
-    positions[i*3+1] = 0;
-    positions[i*3+2] = 0;
-
-    velocities.push({
-      x: (Math.random() - 0.5) * 12,
-      y: Math.random() * 14,
-      z: (Math.random() - 0.5) * 12
-    });
-
-    life.push(1.0);
-  }
-
+  const positions = new Float32Array(count * 3).fill(0);
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
   const material = new THREE.PointsMaterial({
     color: new THREE.Color().setHSL(Math.random(), 1, 0.6),
-    size: 6,
+    size: 4,
     transparent: true,
     opacity: 1,
-    depthWrite: false,
-    sizeAttenuation: false
+    depthWrite: false
   });
 
   const points = new THREE.Points(geometry, material);
-  points.position.copy(position);
-  points.userData = { velocities, life, scale };
+  
+  // Trajectory variation
+  const launchVX = (Math.random() - 0.5) * 2.0; 
+  const launchVZ = (Math.random() - 0.5) * 2.0;
+
+  points.userData = {
+    state: 'launching',
+    currentAlt: 0,
+    targetAlt: targetAltitude,
+    lng, lat,
+    scale,
+    launchVX,
+    launchVZ,
+    velocities: Array.from({length: count}, () => ({
+      x: (Math.random() - 0.5) * 18,
+      y: (Math.random() - 0.2) * 22,
+      z: (Math.random() - 0.5) * 18
+    })),
+    life: new Array(count).fill(1.0)
+  };
+
   return points;
 }
 
-/* ---------------- Random Firework Location ---------------- */
-function randomFireworkLocation(map) {
-  const b = map.getBounds();
-  const lng = b.getWest() + Math.random() * (b.getEast() - b.getWest());
-  const lat = b.getSouth() + Math.random() * (b.getNorth() - b.getSouth());
-  const altitude = 60 + Math.random() * 80; // meters above ground
-
-  const merc = maplibregl.MercatorCoordinate.fromLngLat({ lng, lat }, altitude);
-  return { position: new THREE.Vector3(merc.x, merc.y, merc.z), scale: merc.meterInMercatorCoordinateUnits() };
-}
-
-/* ---------------- Map Load ---------------- */
 map.on('load', async () => {
+  // Start the camera rotation
+  requestAnimationFrame(rotateCamera);
 
-  /* --- Load 3D Buildings --- */
+  /* --- 3D Buildings --- */
   const proj3857 = proj4('EPSG:3857');
   const proj4326 = proj4('EPSG:4326');
-
   const reprojectCoord = c => proj4(proj3857, proj4326, c);
   const reprojectGeometry = g => {
     if(g.type === 'Polygon') return { type: 'Polygon', coordinates: g.coordinates.map(r => r.map(reprojectCoord)) };
@@ -104,10 +111,10 @@ map.on('load', async () => {
     id: 'buildings-3d',
     type: 'fill-extrusion',
     source: 'buildings',
-    paint: {
-      'fill-extrusion-color': '#888',
-      'fill-extrusion-height': ['coalesce', ['get', 'height'], 15],
-      'fill-extrusion-opacity': 0.9
+    paint: { 
+      'fill-extrusion-color': '#111115', 
+      'fill-extrusion-height': 15, 
+      'fill-extrusion-opacity': 0.9 
     }
   });
 
@@ -116,7 +123,6 @@ map.on('load', async () => {
     id: 'fireworks',
     type: 'custom',
     renderingMode: '3d',
-
     onAdd(map, gl) {
       this.camera = new THREE.Camera();
       this.scene = new THREE.Scene();
@@ -124,58 +130,62 @@ map.on('load', async () => {
       this.renderer.autoClear = false;
       this.fireworks = [];
 
-      // Spawn fireworks repeatedly at random positions
       setInterval(() => {
-        const { position, scale } = randomFireworkLocation(map);
-        const fw = createFirework(position, scale);
+        const center = map.getCenter();
+        const spread = 0.003; // Limits spawn area to the visible center
+        const lng = center.lng + (Math.random() - 0.5) * spread;
+        const lat = center.lat + (Math.random() - 0.5) * spread;
+        
+        const fw = createFirework(lng, lat);
         this.scene.add(fw);
         this.fireworks.push(fw);
-      }, 1200);
+      }, 450);
     },
 
     render(gl, matrix) {
       this.camera.projectionMatrix.fromArray(matrix);
-      this.renderer.clearDepth();
-
+      
       for (let i = this.fireworks.length - 1; i >= 0; i--) {
         const fw = this.fireworks[i];
-        const pos = fw.geometry.attributes.position.array;
-        const vel = fw.userData.velocities;
-        const life = fw.userData.life;
-        const s = fw.userData.scale;
-        let alive = false;
+        const ud = fw.userData;
 
-        for (let j = 0; j < vel.length; j++) {
-          if(life[j] <= 0) continue;
-
-          pos[j*3]     += vel[j].x * s * 0.03;
-          pos[j*3 + 1] += vel[j].y * s * 0.03;
-          pos[j*3 + 2] += vel[j].z * s * 0.03;
-
-          vel[j].y -= 9.8 * s * 0.01;
-          life[j] -= 0.015;
-          alive = true;
-        }
-
-        fw.material.opacity -= 0.01;
-        fw.geometry.attributes.position.needsUpdate = true;
-
-        if(!alive || fw.material.opacity <= 0){
-          this.scene.remove(fw);
-          this.fireworks.splice(i,1);
+        if (ud.state === 'launching') {
+          ud.lng += ud.launchVX * 0.00003;
+          ud.lat += ud.launchVZ * 0.00003;
+          ud.currentAlt += 7.0; 
+          const merc = maplibregl.MercatorCoordinate.fromLngLat({ lng: ud.lng, lat: ud.lat }, ud.currentAlt);
+          fw.position.set(merc.x, merc.y, merc.z);
+          if (ud.currentAlt >= ud.targetAlt) ud.state = 'exploding';
+        } else {
+          const pos = fw.geometry.attributes.position.array;
+          let anyAlive = false;
+          for (let j = 0; j < ud.velocities.length; j++) {
+            if (ud.life[j] <= 0) continue;
+            pos[j*3]     += ud.velocities[j].x * ud.scale * 0.04;
+            pos[j*3 + 1] += ud.velocities[j].y * ud.scale * 0.04;
+            pos[j*3 + 2] += ud.velocities[j].z * ud.scale * 0.04;
+            ud.velocities[j].y -= 9.8 * ud.scale * 0.015;
+            ud.life[j] -= 0.012;
+            anyAlive = true;
+          }
+          fw.material.opacity -= 0.01;
+          fw.geometry.attributes.position.needsUpdate = true;
+          if (!anyAlive || fw.material.opacity <= 0) {
+            this.scene.remove(fw);
+            fw.geometry.dispose();
+            fw.material.dispose();
+            this.fireworks.splice(i, 1);
+          }
         }
       }
-
       this.renderer.resetState();
       this.renderer.render(this.scene, this.camera);
       map.triggerRepaint();
     }
   };
 
-  // Add fireworks above buildings
   map.addLayer(fireworksLayer);
 });
 </script>
-
 </body>
 </html>
