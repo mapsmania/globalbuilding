@@ -7,6 +7,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
 <script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
 <style>
   body { margin: 0; padding: 0; }
@@ -48,6 +50,66 @@ const map = new maplibregl.Map({
   })
   
 map.on('load', () => {
+
+  const fireworksLayer = {
+  id: 'fireworks',
+  type: 'custom',
+  renderingMode: '3d',
+
+  onAdd(map, gl) {
+    this.camera = new THREE.Camera();
+    this.scene = new THREE.Scene();
+
+    this.renderer = new THREE.WebGLRenderer({
+      canvas: map.getCanvas(),
+      context: gl,
+      antialias: true
+    });
+
+    this.renderer.autoClear = false;
+
+    // Convert lng/lat to Mercator
+    const merc = maplibregl.MercatorCoordinate.fromLngLat(
+      [-0.092, 51.515], // firework location
+      50 // altitude in meters
+    );
+
+    const position = new THREE.Vector3(
+      merc.x,
+      merc.y,
+      merc.z
+    );
+
+    this.firework = createFirework(position);
+    this.scene.add(this.firework);
+  },
+
+  render(gl, matrix) {
+    const m = new THREE.Matrix4().fromArray(matrix);
+    this.camera.projectionMatrix = m;
+
+    // Animate particles
+    const positions = this.firework.geometry.attributes.position.array;
+    const velocities = this.firework.userData.velocities;
+
+    for (let i = 0; i < velocities.length; i++) {
+      positions[i * 3] += velocities[i].x * 0.02;
+      positions[i * 3 + 1] += velocities[i].y * 0.02;
+      positions[i * 3 + 2] += velocities[i].z * 0.02;
+
+      velocities[i].y -= 0.05; // gravity
+    }
+
+    this.firework.geometry.attributes.position.needsUpdate = true;
+
+    this.renderer.resetState();
+    this.renderer.render(this.scene, this.camera);
+    map.triggerRepaint();
+  }
+};
+
+map.addLayer(fireworksLayer);
+
   fetch("https://mapsmania.github.io/globalbuilding/building.geojson")
     .then(r => r.json())
     .then(data => {
@@ -79,6 +141,40 @@ map.on('load', () => {
       map.addControl(new maplibregl.NavigationControl());
     });
 });
+
+  function createFirework(position) {
+  const particles = 200;
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array(particles * 3);
+  const velocities = [];
+
+  for (let i = 0; i < particles; i++) {
+    positions[i * 3] = 0;
+    positions[i * 3 + 1] = 0;
+    positions[i * 3 + 2] = 0;
+
+    velocities.push({
+      x: (Math.random() - 0.5) * 5,
+      y: Math.random() * 5,
+      z: (Math.random() - 0.5) * 5
+    });
+  }
+
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  const material = new THREE.PointsMaterial({
+    color: 0xffcc00,
+    size: 4,
+    transparent: true
+  });
+
+  const points = new THREE.Points(geometry, material);
+  points.userData.velocities = velocities;
+  points.position.copy(position);
+
+  return points;
+}
+
 </script>
 </body>
 </html>
