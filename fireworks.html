@@ -1,172 +1,72 @@
-
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>3D Buildings + Basemap</title>
+<title>MapLibre 3D Buildings with Fireworks</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css" rel="stylesheet" />
-<script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
 
+<link
+  href="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.css"
+  rel="stylesheet"
+/>
+<script src="https://unpkg.com/maplibre-gl@3.4.0/dist/maplibre-gl.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.8.0/proj4.js"></script>
+
 <style>
   body { margin: 0; padding: 0; }
   #map { position: absolute; top: 0; bottom: 0; width: 100%; }
 </style>
 </head>
+
 <body>
 <div id="map"></div>
 
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
 
-// Define projections
-const proj3857 = proj4('EPSG:3857');
-const proj4326 = proj4('EPSG:4326');
+/* --------------------------------------------------
+   Map initialization
+-------------------------------------------------- */
 
-// Reproject a single coordinate
-function reprojectCoord(coord) {
-  return proj4(proj3857, proj4326, coord);
-}
-
-// Reproject geometry
-function reprojectGeometry(geom) {
-  if (geom.type === "Polygon") {
-    return { type: "Polygon", coordinates: geom.coordinates.map(ring => ring.map(reprojectCoord)) };
-  }
-  if (geom.type === "MultiPolygon") {
-    return { type: "MultiPolygon", coordinates: geom.coordinates.map(poly => poly.map(ring => ring.map(reprojectCoord))) };
-  }
-  return geom;
-}
-
-// Initialize map
 const map = new maplibregl.Map({
-    style: 'https://tiles.openfreemap.org/styles/positron',
-    center: [-0.092, 51.515],
-    zoom: 16,
-    pitch: 60,
-    bearing: -20,
-    container: 'map',
-  })
-  
-map.on('load', () => {
-
-  const fireworksLayer = {
-  id: 'fireworks',
-  type: 'custom',
-  renderingMode: '3d',
-
-  onAdd(map, gl) {
-    this.camera = new THREE.Camera();
-    this.scene = new THREE.Scene();
-
-    this.renderer = new THREE.WebGLRenderer({
-      canvas: map.getCanvas(),
-      context: gl,
-      antialias: true
-    });
-
-    this.renderer.autoClear = false;
-
-    // Convert lng/lat to Mercator
-    const merc = maplibregl.MercatorCoordinate.fromLngLat(
-      [-0.092, 51.515], // firework location
-      50 // altitude in meters
-    );
-
-    const position = new THREE.Vector3(
-      merc.x,
-      merc.y,
-      merc.z
-    );
-
-    this.firework = createFirework(position);
-    this.scene.add(this.firework);
-  },
-
-  render(gl, matrix) {
-    const m = new THREE.Matrix4().fromArray(matrix);
-    this.camera.projectionMatrix = m;
-
-    // Animate particles
-    const positions = this.firework.geometry.attributes.position.array;
-    const velocities = this.firework.userData.velocities;
-
-    for (let i = 0; i < velocities.length; i++) {
-      positions[i * 3] += velocities[i].x * 0.02;
-      positions[i * 3 + 1] += velocities[i].y * 0.02;
-      positions[i * 3 + 2] += velocities[i].z * 0.02;
-
-      velocities[i].y -= 0.05; // gravity
-    }
-
-    this.firework.geometry.attributes.position.needsUpdate = true;
-
-    this.renderer.resetState();
-    this.renderer.render(this.scene, this.camera);
-    map.triggerRepaint();
-  }
-};
-
-map.addLayer(fireworksLayer);
-
-  fetch("https://mapsmania.github.io/globalbuilding/building.geojson")
-    .then(r => r.json())
-    .then(data => {
-      console.log("Loaded features:", data.features.length);
-
-      // Reproject all features to WGS84
-      data.features = data.features.map(f => ({
-        ...f,
-        geometry: reprojectGeometry(f.geometry)
-      }));
-
-      // Add as GeoJSON source
-      map.addSource('buildings', { type: 'geojson', data: data });
-
-      // Add 3D extrusion layer
-      map.addLayer({
-        id: 'buildings-3d',
-        type: 'fill-extrusion',
-        source: 'buildings',
-        paint: {
-          'fill-extrusion-color': '#888888',
-          'fill-extrusion-height': ['coalesce', ['get', 'height'], 10],
-          'fill-extrusion-base': 0,
-          'fill-extrusion-opacity': 0.9
-        }
-      });
-
-      // Add navigation controls
-      map.addControl(new maplibregl.NavigationControl());
-    });
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/positron',
+  center: [-0.092, 51.515],
+  zoom: 16,
+  pitch: 60,
+  bearing: -20
 });
 
-  function createFirework(position) {
-  const particles = 200;
+map.addControl(new maplibregl.NavigationControl());
+
+/* --------------------------------------------------
+   Firework helper
+-------------------------------------------------- */
+
+function createFirework(position) {
+  const count = 300;
   const geometry = new THREE.BufferGeometry();
-  const positions = new Float32Array(particles * 3);
+  const positions = new Float32Array(count * 3);
   const velocities = [];
 
-  for (let i = 0; i < particles; i++) {
+  for (let i = 0; i < count; i++) {
     positions[i * 3] = 0;
     positions[i * 3 + 1] = 0;
     positions[i * 3 + 2] = 0;
 
     velocities.push({
-      x: (Math.random() - 0.5) * 5,
-      y: Math.random() * 5,
-      z: (Math.random() - 0.5) * 5
+      x: (Math.random() - 0.5) * 10,
+      y: Math.random() * 12,
+      z: (Math.random() - 0.5) * 10
     });
   }
 
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
   const material = new THREE.PointsMaterial({
-    color: 0xffcc00,
-    size: 4,
-    transparent: true
+    color: new THREE.Color().setHSL(Math.random(), 1, 0.6),
+    size: 6,
+    sizeAttenuation: false
   });
 
   const points = new THREE.Points(geometry, material);
@@ -176,6 +76,122 @@ map.addLayer(fireworksLayer);
   return points;
 }
 
+/* --------------------------------------------------
+   Map load
+-------------------------------------------------- */
+
+map.on('load', async () => {
+
+  /* ---------- Load buildings ---------- */
+
+  const proj3857 = proj4('EPSG:3857');
+  const proj4326 = proj4('EPSG:4326');
+
+  function reprojectCoord(coord) {
+    return proj4(proj3857, proj4326, coord);
+  }
+
+  function reprojectGeometry(geom) {
+    if (geom.type === "Polygon") {
+      return {
+        type: "Polygon",
+        coordinates: geom.coordinates.map(r => r.map(reprojectCoord))
+      };
+    }
+    if (geom.type === "MultiPolygon") {
+      return {
+        type: "MultiPolygon",
+        coordinates: geom.coordinates.map(p =>
+          p.map(r => r.map(reprojectCoord))
+        )
+      };
+    }
+    return geom;
+  }
+
+  const buildings = await fetch(
+    'https://mapsmania.github.io/globalbuilding/building.geojson'
+  ).then(r => r.json());
+
+  buildings.features = buildings.features.map(f => ({
+    ...f,
+    geometry: reprojectGeometry(f.geometry)
+  }));
+
+  map.addSource('buildings', {
+    type: 'geojson',
+    data: buildings
+  });
+
+  map.addLayer({
+    id: 'buildings-3d',
+    type: 'fill-extrusion',
+    source: 'buildings',
+    paint: {
+      'fill-extrusion-color': '#888',
+      'fill-extrusion-height': ['coalesce', ['get', 'height'], 15],
+      'fill-extrusion-opacity': 0.9
+    }
+  });
+
+  /* ---------- Fireworks layer ---------- */
+
+  const fireworksLayer = {
+    id: 'fireworks',
+    type: 'custom',
+    renderingMode: '3d',
+
+    onAdd(map, gl) {
+      this.camera = new THREE.Camera();
+      this.scene = new THREE.Scene();
+
+      this.renderer = new THREE.WebGLRenderer({
+        canvas: map.getCanvas(),
+        context: gl,
+        antialias: true
+      });
+      this.renderer.autoClear = false;
+
+      const merc = maplibregl.MercatorCoordinate.fromLngLat(
+        [-0.092, 51.515],
+        80
+      );
+
+      this.scale = merc.meterInMercatorCoordinateUnits();
+
+      this.firework = createFirework(
+        new THREE.Vector3(merc.x, merc.y, merc.z)
+      );
+
+      this.scene.add(this.firework);
+    },
+
+    render(gl, matrix) {
+      this.camera.projectionMatrix.fromArray(matrix);
+
+      const pos = this.firework.geometry.attributes.position.array;
+      const vel = this.firework.userData.velocities;
+      const s = this.scale;
+
+      for (let i = 0; i < vel.length; i++) {
+        pos[i * 3]     += vel[i].x * s * 0.03;
+        pos[i * 3 + 1] += vel[i].y * s * 0.03;
+        pos[i * 3 + 2] += vel[i].z * s * 0.03;
+
+        vel[i].y -= 9.8 * s * 0.01;
+      }
+
+      this.firework.geometry.attributes.position.needsUpdate = true;
+
+      this.renderer.resetState();
+      this.renderer.render(this.scene, this.camera);
+      map.triggerRepaint();
+    }
+  };
+
+  map.addLayer(fireworksLayer);
+});
 </script>
+
 </body>
 </html>
