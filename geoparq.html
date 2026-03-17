@@ -19,17 +19,17 @@
     import * as parquet_wasm from 'https://unpkg.com/parquet-wasm@0.6.0/dist/esm/index.js';
 
     const map = new maplibregl.Map({
-        container: 'map',
-        style: 'https://demotiles.maplibre.org/style.json',
-        center: [0, 0],
-        zoom: 2
-    });
+    style: 'https://tiles.openfreemap.org/styles/liberty',
+    center: [13.388, 52.517],
+    zoom: 9.5,
+    container: 'map',
+  })
 
     async function loadGeoParquet() {
         // 2. Initialize WASM
         await parquet_wasm.default(); 
 
-        const response = await fetch('blocks.geoparquet');
+        const response = await fetch('https://mapsmania.github.io/globalbuilding/blocks.parquet');
         const buffer = await response.arrayBuffer();
         
         // 3. Read the Parquet data
