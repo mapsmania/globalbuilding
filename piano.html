@@ -156,30 +156,31 @@ async function unlockAudio(e) {
 window.addEventListener("pointerdown", unlockAudio);
 
 // --- URL Hash Logic ---
+// --- URL Hash Logic ---
 function parseHashSong() {
   const hash = decodeURIComponent(window.location.hash.slice(1)).toUpperCase();
   if (!hash) return null;
 
   const cleaned = hash.replace(/[—\-,]/g, ' ');
-  
   const tokens = cleaned.split(/\s+/);
 
   const sequence = tokens.map(token => {
-    const [note, duration] = token.split(":");
+    const [notesPart, durationPart] = token.split(":");
 
-    if (noteMap[note] || note === "-") {
-      return {
-        note: note,
-        duration: parseInt(duration) || 1 // default = 1 beat
-      };
-    }
+    if (!notesPart) return null;
 
-    return null;
+    const notes = notesPart.split("+"); // ✅ chord support
+    const duration = parseInt(durationPart) || 1;
+
+    return {
+      notes,
+      duration
+    };
   }).filter(Boolean);
 
   return sequence.length > 0 ? sequence : null;
 }
-
+    
 function checkHashVisibility() {
   const notes = parseHashSong();
   const btn = document.getElementById("urlSongBtn");
@@ -209,6 +210,7 @@ function highlightCountry(el, clearPrevious = true) {
 }
 
 // --- Playback ---
+// --- Playback ---
 async function playHashSong() {
   if (isPlaying) return; 
   const sequence = parseHashSong();
@@ -224,36 +226,40 @@ async function playHashSong() {
   let currentTime = 0;
 
   sequence.forEach(step => {
-    const { note, duration } = step;
+    const { notes, duration } = step;
 
     setTimeout(() => {
-      if (note === "-") {
-        // rest: clear visuals
+
+      // 🎵 Rest handling
+      if (notes.length === 1 && notes[0] === "-") {
         d3.selectAll(".country").classed("active", false);
         return;
       }
 
-      const currentNoteName = noteMap[note];
+      // 🎹 Play all notes in chord (or single note)
+      notes.forEach(n => {
+        const currentNoteName = noteMap[n];
 
-      if (currentNoteName) {
-        // play note
-        piano.play(currentNoteName, 0, {
-          duration: duration * (beatDuration / 1000),
-          gain: 1.5
-        });
+        if (currentNoteName) {
+          piano.play(currentNoteName, 0, {
+            duration: duration * (beatDuration / 1000),
+            gain: 1.5
+          });
 
-        // highlight
-        const matchingCountries = d3.selectAll(".country").filter(function(d) {
-          return getNoteFromCountry(d) === currentNoteName;
-        });
+          // Highlight (only once per step)
+          const matchingCountries = d3.selectAll(".country").filter(function(d) {
+            return getNoteFromCountry(d) === currentNoteName;
+          });
 
-        if (!matchingCountries.empty()) {
-          const nodes = matchingCountries.nodes();
-          const randomNode = nodes[Math.floor(Math.random() * nodes.length)];
+          if (!matchingCountries.empty()) {
+            const nodes = matchingCountries.nodes();
+            const randomNode = nodes[Math.floor(Math.random() * nodes.length)];
 
-          highlightCountry(d3.select(randomNode), clearHighlightsOnNextNote);
+            highlightCountry(d3.select(randomNode), clearHighlightsOnNextNote);
+          }
         }
-      }
+      });
+
     }, currentTime);
 
     currentTime += duration * beatDuration;
