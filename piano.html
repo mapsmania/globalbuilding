@@ -97,7 +97,7 @@ button:hover {
 
 <div id="controls">
   <button id="urlSongBtn" style="display:none;" onclick="handleUrlSongClick()">▶ Play URL Tune</button>
-  <button onclick="playSong()">Play Guide</button>
+  
   <button onclick="openModal()">Info</button>
 </div>
 
@@ -273,42 +273,6 @@ d3.json("https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/w
     });
 });
 
-// --- Manual Guide Song ---
-const song = [-10, 20, 40, 60, 30, 0];
-
-async function playSong() {
-  if (isPlaying) return;
-  await initPiano();
-
-  isPlaying = true;
-  let i = 0;
-
-  const interval = setInterval(() => {
-    if (i >= song.length) {
-      clearInterval(interval);
-      isPlaying = false;
-      return;
-    }
-
-    const notes = ["C","D","E","F","G","A","B"];
-    const index = Math.floor(((song[i] + 180) / 360) * notes.length);
-    const note = noteMap[notes[index]];
-
-    if (piano && note) {
-      piano.play(note, 0, { duration: 1.2 });
-
-      const matching = d3.selectAll(".country")
-        .filter(d => getNoteFromCountry(d) === note);
-
-      if (!matching.empty()) {
-        const nodes = matching.nodes();
-        highlightCountry(d3.select(nodes[Math.floor(Math.random() * nodes.length)]), true);
-      }
-    }
-
-    i++;
-  }, 500);
-}
 
 // --- UI Helpers ---
 function openModal() { document.getElementById("modal").style.display = "flex"; }
