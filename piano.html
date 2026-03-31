@@ -105,7 +105,7 @@ button:hover {
   <div id="modalContent">
     <h3>About</h3>
     <p>Countries act as piano keys. Click to play. Follow guided sequences.</p>
-    <p><p>Made with <a href="https://webmapgpt.com/" target="_blank" rel="noopener noreferrer" style="color:#fff; text-decoration:underline;">Web Mapper GPT</a></p></p>
+    <p>Made with <a href="https://webmapgpt.com/" target="_blank" rel="noopener noreferrer" style="color:#fff; text-decoration:underline;">Web Mapper GPT</a></p>
   </div>
 </div>
 
@@ -159,9 +159,25 @@ window.addEventListener("pointerdown", unlockAudio);
 function parseHashSong() {
   const hash = decodeURIComponent(window.location.hash.slice(1)).toUpperCase();
   if (!hash) return null;
+
   const cleaned = hash.replace(/[—\-,]/g, ' ');
-  const notes = cleaned.split(/\s+/).filter(n => noteMap[n]);
-  return notes.length > 0 ? notes : null;
+  
+  const tokens = cleaned.split(/\s+/);
+
+  const sequence = tokens.map(token => {
+    const [note, duration] = token.split(":");
+
+    if (noteMap[note] || note === "-") {
+      return {
+        note: note,
+        duration: parseInt(duration) || 1 // default = 1 beat
+      };
+    }
+
+    return null;
+  }).filter(Boolean);
+
+  return sequence.length > 0 ? sequence : null;
 }
 
 function checkHashVisibility() {
@@ -195,45 +211,58 @@ function highlightCountry(el, clearPrevious = true) {
 // --- Playback ---
 async function playHashSong() {
   if (isPlaying) return; 
-  const notes = parseHashSong();
-  if (!notes || !piano) return;
+  const sequence = parseHashSong();
+  if (!sequence || !piano) return;
 
-  // Reset visuals before playback
   d3.selectAll(".country").classed("active", false);
   activeCountries.clear();
 
   isPlaying = true;
-  let i = 0;
 
-  const interval = setInterval(() => {
-    if (i >= notes.length) {
-      clearInterval(interval);
-      isPlaying = false;
-      return;
-    }
+  const beatDuration = 400; // ms per beat (tempo control)
 
-    const currentNoteName = noteMap[notes[i]];
+  let currentTime = 0;
 
-    if (currentNoteName) {
-      // Play sound
-      piano.play(currentNoteName, 0, { duration: 1.2, gain: 1.5 });
+  sequence.forEach(step => {
+    const { note, duration } = step;
 
-      // Find matching countries
-      const matchingCountries = d3.selectAll(".country").filter(function(d) {
-        return getNoteFromCountry(d) === currentNoteName;
-      });
-
-      if (!matchingCountries.empty()) {
-        const nodes = matchingCountries.nodes();
-        const randomNode = nodes[Math.floor(Math.random() * nodes.length)];
-
-        // Highlight country (persistent)
-        highlightCountry(d3.select(randomNode), clearHighlightsOnNextNote);
+    setTimeout(() => {
+      if (note === "-") {
+        // rest: clear visuals
+        d3.selectAll(".country").classed("active", false);
+        return;
       }
-    }
 
-    i++;
-  }, 500);
+      const currentNoteName = noteMap[note];
+
+      if (currentNoteName) {
+        // play note
+        piano.play(currentNoteName, 0, {
+          duration: duration * (beatDuration / 1000),
+          gain: 1.5
+        });
+
+        // highlight
+        const matchingCountries = d3.selectAll(".country").filter(function(d) {
+          return getNoteFromCountry(d) === currentNoteName;
+        });
+
+        if (!matchingCountries.empty()) {
+          const nodes = matchingCountries.nodes();
+          const randomNode = nodes[Math.floor(Math.random() * nodes.length)];
+
+          highlightCountry(d3.select(randomNode), clearHighlightsOnNextNote);
+        }
+      }
+    }, currentTime);
+
+    currentTime += duration * beatDuration;
+  });
+
+  // End playback
+  setTimeout(() => {
+    isPlaying = false;
+  }, currentTime);
 }
     
 // --- Map Setup ---
