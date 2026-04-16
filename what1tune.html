@@ -30,8 +30,29 @@ body { margin: 0; background: var(--bg-black); font-family: -apple-system, Blink
     color: var(--text-white);
     display: flex;
     align-items: center;
-    padding: 0 15px;
+    justify-content: space-between; /* This pushes the link to the right */
+    padding: 0 20px;
     z-index: 20;
+    box-sizing: border-box;
+}
+
+#logo-container {
+    display: flex;
+    align-items: center;
+}
+
+#about-link {
+    color: var(--text-white);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+#about-link:hover {
+    opacity: 1;
+    text-decoration: underline;
 }
 
 #logo-circle {
@@ -122,8 +143,13 @@ body { margin: 0; background: var(--bg-black); font-family: -apple-system, Blink
 <body>
 
 <div id="main-header">
-    <div id="logo-circle">♪</div>
-    <div style="font-weight:bold; font-size: 18px;">What1Tune</div>
+    <div id="logo-container">
+        <div id="logo-circle">♪</div>
+        <div id="header-title">What1Tune</div>
+    </div>
+    <a href="https://googlemapsmania.blogspot.com/2026/04/what1tune-musical-addresses.html" 
+       target="_blank" 
+       id="about-link">About</a>
 </div>
 
 <div id="map"></div>
